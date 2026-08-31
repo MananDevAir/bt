@@ -1,0 +1,782 @@
+{
+  "confidence": 55.0,
+  "direction": 1,
+  "gate_passed": true,
+  "gates": {
+    "adx_weak": {
+      "action": "note",
+      "detail": "ADX=19 < 20.0 on 4h (range mode)"
+    },
+    "htf_conflict": {
+      "action": "downgrade",
+      "detail": "HTF bias=bearish opposes signal",
+      "max_label": "WATCH"
+    }
+  },
+  "label": "WATCH LONG",
+  "max_possible": 1200.0,
+  "plan": {
+    "brief_reason": "Weekly uptrend + 4h CHOCH bear + pullback to fib OTE",
+    "direction": 1,
+    "entry_high": 22787.22,
+    "entry_low": 22685.19,
+    "entry_mid": 22736.21,
+    "holding_horizon": "hours",
+    "invalidation": "HTF/MTF close below SL (22,430.10)",
+    "risk_atr": 1.5,
+    "risk_pct": 1.35,
+    "rr": 2.0,
+    "sl": 22430.1,
+    "source": "fib_ote",
+    "tp1": 23042.31,
+    "tp2": 23348.41,
+    "tp3": 23654.52,
+    "tp_allocation": [
+      50,
+      30,
+      20
+    ],
+    "trade_type": "Swing"
+  },
+  "raw_score": 237.37619,
+  "score": 19.8,
+  "symbol": "GOLDEN",
+  "timeframes": {
+    "15m": {
+      "regime": "normal",
+      "structure_bias": "bearish",
+      "vote_count": 25,
+      "vote_sum": 4.7,
+      "votes": [
+        {
+          "category": "momentum",
+          "detail": "bearish div on rsi (13 bars ago)",
+          "name": "divergence",
+          "value": -0.8
+        },
+        {
+          "category": "momentum",
+          "detail": "bullish div on rsi (3 bars ago)",
+          "name": "divergence",
+          "value": 0.8
+        },
+        {
+          "category": "momentum",
+          "detail": "MACD histogram positive",
+          "name": "macd",
+          "value": 0.7
+        },
+        {
+          "category": "momentum",
+          "detail": "RSI=65 above 50",
+          "name": "rsi",
+          "value": 0.3
+        },
+        {
+          "category": "momentum",
+          "detail": "Stoch K > D",
+          "name": "stoch",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "CHOCH bear",
+          "name": "bos",
+          "value": -0.9
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 22,206 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 22,833 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "premium zone (82%)",
+          "name": "premium_discount",
+          "value": -0.5
+        },
+        {
+          "category": "structure",
+          "detail": "LH-LL bearish structure",
+          "name": "structure_bias",
+          "value": -1.0
+        },
+        {
+          "category": "trend",
+          "detail": "ADX=31 +DI leading",
+          "name": "adx_trend",
+          "value": 0.7
+        },
+        {
+          "category": "trend",
+          "detail": "EMA 20>50>200 aligned bull",
+          "name": "ema_stack",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "price above cloud",
+          "name": "ichimoku_cloud",
+          "value": 0.8
+        },
+        {
+          "category": "trend",
+          "detail": "golden cross (SMA50>200)",
+          "name": "sma_cross",
+          "value": 0.6
+        },
+        {
+          "category": "trend",
+          "detail": "SuperTrend UP",
+          "name": "supertrend",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "tenkan > kijun",
+          "name": "tk_cross",
+          "value": 0.5
+        },
+        {
+          "category": "volume",
+          "detail": "OBV above EMA (accumulation)",
+          "name": "obv_slope",
+          "value": 0.7
+        },
+        {
+          "category": "volume",
+          "detail": "price above POC (22,367)",
+          "name": "vp_poc",
+          "value": 0.4
+        },
+        {
+          "category": "zones",
+          "detail": "price in fib OTE (0.618 @ 22,981)",
+          "name": "fib_ote",
+          "value": 0.7
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,055 (0.2 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,126 (0.5 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,811 (1.0 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,946 (0.3 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        }
+      ]
+    },
+    "1d": {
+      "regime": "expanding",
+      "structure_bias": "bearish",
+      "vote_count": 22,
+      "vote_sum": -2.6,
+      "votes": [
+        {
+          "category": "momentum",
+          "detail": "MACD histogram positive",
+          "name": "macd",
+          "value": 0.7
+        },
+        {
+          "category": "momentum",
+          "detail": "RSI=56 above 50",
+          "name": "rsi",
+          "value": 0.3
+        },
+        {
+          "category": "momentum",
+          "detail": "Stoch K < D",
+          "name": "stoch",
+          "value": -0.3
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bear",
+          "name": "bos",
+          "value": -0.9
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 19,462 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 21,715 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "equilibrium",
+          "name": "premium_discount",
+          "value": 0.0
+        },
+        {
+          "category": "structure",
+          "detail": "LH-LL bearish structure",
+          "name": "structure_bias",
+          "value": -1.0
+        },
+        {
+          "category": "trend",
+          "detail": "ADX=17 weak trend",
+          "name": "adx_trend",
+          "value": 0.0
+        },
+        {
+          "category": "trend",
+          "detail": "price above EMA200",
+          "name": "ema_stack",
+          "value": 0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price inside cloud",
+          "name": "ichimoku_cloud",
+          "value": 0.0
+        },
+        {
+          "category": "trend",
+          "detail": "golden cross (SMA50>200)",
+          "name": "sma_cross",
+          "value": 0.6
+        },
+        {
+          "category": "trend",
+          "detail": "SuperTrend DOWN",
+          "name": "supertrend",
+          "value": -1.0
+        },
+        {
+          "category": "trend",
+          "detail": "tenkan < kijun",
+          "name": "tk_cross",
+          "value": -0.5
+        },
+        {
+          "category": "volume",
+          "detail": "OBV below EMA (distribution)",
+          "name": "obv_slope",
+          "value": -0.7
+        },
+        {
+          "category": "volume",
+          "detail": "price above POC (19,979)",
+          "name": "vp_poc",
+          "value": 0.4
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,126 (0.2 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,379 (0.6 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,482 (0.9 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,699 (0.5 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        }
+      ]
+    },
+    "1h": {
+      "regime": "expanding",
+      "structure_bias": "bullish",
+      "vote_count": 23,
+      "vote_sum": 6.5,
+      "votes": [
+        {
+          "category": "momentum",
+          "detail": "MACD histogram positive",
+          "name": "macd",
+          "value": 0.7
+        },
+        {
+          "category": "momentum",
+          "detail": "RSI=70 above 50",
+          "name": "rsi",
+          "value": 0.3
+        },
+        {
+          "category": "momentum",
+          "detail": "Stoch K=81 overbought",
+          "name": "stoch",
+          "value": -0.5
+        },
+        {
+          "category": "structure",
+          "detail": "CHOCH bull",
+          "name": "bos",
+          "value": 0.9
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 22,005 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 22,496 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "premium zone (91%)",
+          "name": "premium_discount",
+          "value": -0.5
+        },
+        {
+          "category": "structure",
+          "detail": "HH-HL bullish structure",
+          "name": "structure_bias",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "ADX=42 +DI leading",
+          "name": "adx_trend",
+          "value": 0.7
+        },
+        {
+          "category": "trend",
+          "detail": "EMA 20>50>200 aligned bull",
+          "name": "ema_stack",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "price above cloud",
+          "name": "ichimoku_cloud",
+          "value": 0.8
+        },
+        {
+          "category": "trend",
+          "detail": "death cross (SMA50<200)",
+          "name": "sma_cross",
+          "value": -0.6
+        },
+        {
+          "category": "trend",
+          "detail": "SuperTrend UP",
+          "name": "supertrend",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "tenkan > kijun",
+          "name": "tk_cross",
+          "value": 0.5
+        },
+        {
+          "category": "volume",
+          "detail": "OBV above EMA (accumulation)",
+          "name": "obv_slope",
+          "value": 0.7
+        },
+        {
+          "category": "volume",
+          "detail": "price above POC (22,520)",
+          "name": "vp_poc",
+          "value": 0.4
+        },
+        {
+          "category": "zones",
+          "detail": "price in fib OTE (0.618 @ 22,926)",
+          "name": "fib_ote",
+          "value": 0.7
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,089 (0.3 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,263 (1.0 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,707 (1.3 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,820 (0.8 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        }
+      ]
+    },
+    "1w": {
+      "regime": "quiet",
+      "structure_bias": "bullish",
+      "vote_count": 22,
+      "vote_sum": 7.5,
+      "votes": [
+        {
+          "category": "momentum",
+          "detail": "MACD histogram positive",
+          "name": "macd",
+          "value": 0.7
+        },
+        {
+          "category": "momentum",
+          "detail": "RSI=59 above 50",
+          "name": "rsi",
+          "value": 0.3
+        },
+        {
+          "category": "momentum",
+          "detail": "Stoch K < D",
+          "name": "stoch",
+          "value": -0.3
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull",
+          "name": "bos",
+          "value": 0.9
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 19,967 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 20,940 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "premium zone (83%)",
+          "name": "premium_discount",
+          "value": -0.5
+        },
+        {
+          "category": "structure",
+          "detail": "HH-HL bullish structure",
+          "name": "structure_bias",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "ADX=23 weak trend",
+          "name": "adx_trend",
+          "value": 0.0
+        },
+        {
+          "category": "trend",
+          "detail": "EMA 20>50>200 aligned bull",
+          "name": "ema_stack",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "price above cloud",
+          "name": "ichimoku_cloud",
+          "value": 0.8
+        },
+        {
+          "category": "trend",
+          "detail": "golden cross (SMA50>200)",
+          "name": "sma_cross",
+          "value": 0.6
+        },
+        {
+          "category": "trend",
+          "detail": "SuperTrend UP",
+          "name": "supertrend",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "tenkan > kijun",
+          "name": "tk_cross",
+          "value": 0.5
+        },
+        {
+          "category": "volume",
+          "detail": "OBV above EMA (accumulation)",
+          "name": "obv_slope",
+          "value": 0.7
+        },
+        {
+          "category": "volume",
+          "detail": "price above POC (21,378)",
+          "name": "vp_poc",
+          "value": 0.4
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "bear liq sweep",
+          "name": "liq_sweep",
+          "value": -0.6
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,807 (0.7 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 21,661 (1.2 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,004 (0.9 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,812 (0.2 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        }
+      ]
+    },
+    "4h": {
+      "regime": "expanding",
+      "structure_bias": "bearish",
+      "vote_count": 24,
+      "vote_sum": 3.0,
+      "votes": [
+        {
+          "category": "momentum",
+          "detail": "bearish div on rsi (18 bars ago)",
+          "name": "divergence",
+          "value": -0.8
+        },
+        {
+          "category": "momentum",
+          "detail": "MACD histogram positive",
+          "name": "macd",
+          "value": 0.7
+        },
+        {
+          "category": "momentum",
+          "detail": "RSI=66 above 50",
+          "name": "rsi",
+          "value": 0.3
+        },
+        {
+          "category": "momentum",
+          "detail": "Stoch K=88 overbought",
+          "name": "stoch",
+          "value": -0.5
+        },
+        {
+          "category": "structure",
+          "detail": "CHOCH bear",
+          "name": "bos",
+          "value": -0.9
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 22,026 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "equal lows @ 22,150 (liq pool)",
+          "name": "equal_levels",
+          "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "premium zone (89%)",
+          "name": "premium_discount",
+          "value": -0.5
+        },
+        {
+          "category": "structure",
+          "detail": "LH-LL bearish structure",
+          "name": "structure_bias",
+          "value": -1.0
+        },
+        {
+          "category": "trend",
+          "detail": "ADX=19 weak trend",
+          "name": "adx_trend",
+          "value": 0.0
+        },
+        {
+          "category": "trend",
+          "detail": "price above EMA200",
+          "name": "ema_stack",
+          "value": 0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price above cloud",
+          "name": "ichimoku_cloud",
+          "value": 0.8
+        },
+        {
+          "category": "trend",
+          "detail": "death cross (SMA50<200)",
+          "name": "sma_cross",
+          "value": -0.6
+        },
+        {
+          "category": "trend",
+          "detail": "SuperTrend UP",
+          "name": "supertrend",
+          "value": 1.0
+        },
+        {
+          "category": "trend",
+          "detail": "tenkan > kijun",
+          "name": "tk_cross",
+          "value": 0.5
+        },
+        {
+          "category": "volume",
+          "detail": "OBV above EMA (accumulation)",
+          "name": "obv_slope",
+          "value": 0.7
+        },
+        {
+          "category": "volume",
+          "detail": "price above POC (22,488)",
+          "name": "vp_poc",
+          "value": 0.4
+        },
+        {
+          "category": "zones",
+          "detail": "price in fib OTE (0.618 @ 22,736)",
+          "name": "fib_ote",
+          "value": 0.7
+        },
+        {
+          "category": "zones",
+          "detail": "bull liq sweep",
+          "name": "liq_sweep",
+          "value": 0.6
+        },
+        {
+          "category": "zones",
+          "detail": "bull liq sweep",
+          "name": "liq_sweep",
+          "value": 0.6
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,075 (0.2 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "resistance @ 23,275 (0.8 ATR away)",
+          "name": "sr_zone",
+          "value": -0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,644 (1.1 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        },
+        {
+          "category": "zones",
+          "detail": "support @ 22,854 (0.5 ATR away)",
+          "name": "sr_zone",
+          "value": 0.5
+        }
+      ]
+    }
+  }
+}

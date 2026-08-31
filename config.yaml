@@ -1,0 +1,149 @@
+# Multi-asset market analysis & signal bot - configuration
+# Analysis only. This bot never places orders.
+
+# Profile: conservative | balanced | aggressive
+#   conservative — fewer trades, wider stops, R:R ≥ 2.0, higher thresholds
+#   balanced     — default settings (the shipped config.yaml values)
+#   aggressive   — more trades, tighter stops, R:R ≥ 1.0, lower thresholds
+profile: balanced
+dry_run: true                # true = log signals, do not send to Telegram
+
+timeframes:
+  macro: 1w
+  htf: 1d
+  mtf: [4h, 1h]
+  ltf: 15m
+
+# Each symbol has a primary and fallback data source.
+# The router tries primary first; on failure it falls back automatically.
+# source: binance | hyperliquid | yfinance | twelvedata
+# session: always | us_cash | fx_week
+symbols:
+  - name: BTC
+    primary:  {source: binance,     ticker: "BTC/USDT"}
+    fallback: {source: hyperliquid, ticker: "BTC"}
+    session: always
+
+  - name: ETH
+    primary:  {source: binance,     ticker: "ETH/USDT"}
+    fallback: {source: hyperliquid, ticker: "ETH"}
+    session: always
+
+  - name: XAUUSDT
+    primary:  {source: binance,     ticker: "XAUT/USDT"}
+    fallback: {source: hyperliquid, ticker: "PAXG"}
+    session: always
+
+  - name: US100
+    primary:  {source: hyperliquid, ticker: "xyz:XYZ100"}
+    fallback: {source: yfinance,    ticker: "^NDX"}
+    session: always
+
+  - name: US500
+    primary:  {source: hyperliquid, ticker: "xyz:SP500"}
+    fallback: {source: yfinance,    ticker: "^GSPC"}
+    session: always
+
+  - name: US30
+    primary:  {source: yfinance,    ticker: "^DJI"}
+    fallback: {source: twelvedata,  ticker: "DJI"}
+    session: us_cash
+
+  - name: EURUSD
+    primary:  {source: hyperliquid, ticker: "xyz:EUR"}
+    fallback: {source: yfinance,    ticker: "EURUSD=X"}
+    session: always
+
+  - name: GBPUSD
+    primary:  {source: hyperliquid, ticker: "xyz:GBP"}
+    fallback: {source: yfinance,    ticker: "GBPUSD=X"}
+    session: always
+
+  - name: USDJPY
+    primary:  {source: hyperliquid, ticker: "xyz:JPY"}
+    fallback: {source: yfinance,    ticker: "USDJPY=X"}
+    session: always
+
+# how many closed candles we want per timeframe for analysis
+history:
+  "1w": 104
+  "15m": 500
+  "1h": 500
+  "4h": 400
+  "1d": 300
+
+# confluence category weights (sum 100)
+weights: {trend: 30, structure: 30, momentum: 20, zones: 12, volume: 8}
+
+# timeframe influence on the final score
+tf_multiplier: {"1w": 4.0, "1d": 3.0, "4h": 2.0, "1h": 2.0, "15m": 1.0}
+
+thresholds:
+  strong: 65
+  signal: 40
+  watch: 18
+
+# Symbol-specific overrides (backtest-tuned)
+# Symbols with 50% or lower win rate at watch=18 get a stricter threshold
+symbol_overrides:
+  US30:     {watch: 25}    # 50% → raised from 18 to reduce false signals
+  XAUUSDT:  {watch: 25}    # 50% → tokenized gold needs stronger confluence
+  US100:    {watch: 15}    # 0 signals at 18 → lowered to allow setups to trigger
+  EURUSD:   {watch: 15}    # lower vol / thinner books on perps → lower threshold
+  GBPUSD:   {watch: 15}    # lower vol / thinner books on perps → lower threshold
+
+
+gates:
+  min_rr: 1.5
+  min_adx: 20
+  max_stop_atr: 3.0
+  atr_pct_min: 15
+  atr_pct_max: 95
+  cooldown_hours: 4
+  cooldown_score_override: 15
+
+risk:
+  default_risk_pct: 1.0
+  atr_stop_mult: 1.5
+  structure_stop_buffer_atr: 0.20
+  tp_r_multiples: [1.0, 2.0, 3.0]
+  tp_allocation: [50, 30, 20]
+  snap_tolerance_atr: 0.30
+
+llm:
+  provider: huggingface
+  model: "Qwen/Qwen3-8B-Instruct"
+  fallback_model: "meta-llama/Llama-3.1-8B-Instruct"
+  enabled: true
+  daily_cap: 100
+  timeout_s: 12
+
+budget:
+  twelvedata_daily_cap: 750
+  twelvedata_per_min: 7
+
+tracking:
+  outcome_check_interval_hours: 1
+  max_signal_age_days: 7
+  report_hour_utc: 0
+  weekly_report_day: sunday
+
+logging:
+  log_dir: "data"               # JSONL files live alongside the SQLite DB
+  signals_file: "signals.jsonl"
+  outcomes_file: "outcomes.jsonl"
+  scans_file: "scans.jsonl"
+  daily_report_file: "daily_report.md"
+  rotate_days: 90
+
+# crypto source fallbacks if binance is unreachable from this host
+exchange_fallbacks: [bybit, okx, kraken]
+
+scan_interval_minutes: 15
+db_path: "data/bot.db"
+
+# Sleep window (Timezone: IST) - bot will not scan for new signals during this time
+sleep_window:
+  enabled: true
+  start_hour_ist: 0   # 12:00 AM
+  end_hour_ist: 5     # 05:00 AM

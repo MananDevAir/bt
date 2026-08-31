@@ -1,0 +1,25 @@
+[Unit]
+Description=Signal Bot 24/7 Scanner
+After=network.target
+
+[Service]
+Type=simple
+
+# The setup.sh script will dynamically replace USERNAME and BOT_DIR
+User=USERNAME
+WorkingDirectory=BOT_DIR
+ExecStart=BOT_DIR/venv/bin/python run_bot.py --live
+
+# Restart automatically if the bot crashes
+Restart=always
+RestartSec=10
+
+# Logging goes to journalctl
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=signalbot
+
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

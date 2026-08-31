@@ -1,0 +1,26 @@
+# secrets
+.env
+
+# local state
+*.db-journal
+*.db-wal
+data/*
+!data/bot.db
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
