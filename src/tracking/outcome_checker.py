@@ -28,14 +28,16 @@ __all__ = ["check_outcomes"]
 DEFAULT_EXPIRY_H = 48
 
 
-def _get_current_price(conn: sqlite3.Connection, symbol: str) -> float | None:
-    """Get the latest close price for a symbol from cached candles."""
+def _get_latest_candle(conn: sqlite3.Connection, symbol: str) -> dict[str, float] | None:
+    """Get the latest high, low, and close prices for a symbol from cached candles."""
     row = conn.execute(
-        "SELECT close FROM candles WHERE symbol = ? "
+        "SELECT high, low, close FROM candles WHERE symbol = ? "
         "ORDER BY ts DESC LIMIT 1",
         (symbol,)
     ).fetchone()
-    return float(row["close"]) if row else None
+    if not row:
+        return None
+    return {"high": float(row["high"]), "low": float(row["low"]), "close": float(row["close"])}
 
 
 def _ensure_outcome_row(conn: sqlite3.Connection, signal_id: int) -> None:
@@ -84,11 +86,15 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             continue
 
         # Get current price
-        price = _get_current_price(conn, symbol)
-        if price is None:
+        candle = _get_latest_candle(conn, symbol)
+        if candle is None:
             log.debug("No price data for %s, skipping signal #%d", symbol, signal_id)
             summary["still_open"] += 1
             continue
+
+        price = candle["close"]
+        high = candle["high"]
+        low = candle["low"]
 
         summary["checked"] += 1
         _ensure_outcome_row(conn, signal_id)
@@ -116,9 +122,9 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
         if not entry_filled:
             # Check if price reached entry zone
-            if direction > 0 and price <= sig["entry_high"]:
+            if direction > 0 and low <= sig["entry_high"]:
                 entry_filled = 1
-            elif direction < 0 and price >= sig["entry_low"]:
+            elif direction < 0 and high >= sig["entry_low"]:
                 entry_filled = 1
 
             if entry_filled:
@@ -150,7 +156,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         new_mae = max(old_mae, mae)
 
         # Check SL hit
-        if direction > 0 and price <= sl:
+        if direction > 0 and low <= sl:
             sig_store.update_status(conn, signal_id, "lost")
             _update_outcome(conn, signal_id, "sl", now_ms,
                             mfe_r=new_mfe, mae_r=new_mae, price=price,
@@ -166,7 +172,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             )
             log.info("Signal #%d SL hit at %.2f (%s)", signal_id, price, symbol)
             continue
-        elif direction < 0 and price >= sl:
+        elif direction < 0 and high >= sl:
             sig_store.update_status(conn, signal_id, "lost")
             _update_outcome(conn, signal_id, "sl", now_ms,
                             mfe_r=new_mfe, mae_r=new_mae, price=price,
@@ -185,11 +191,11 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
         # Check TP hits (track individually)
         tp_hit = None
-        if tp3 and ((direction > 0 and price >= tp3) or (direction < 0 and price <= tp3)):
+        if tp3 and ((direction > 0 and high >= tp3) or (direction < 0 and low <= tp3)):
             tp_hit = "tp3"
-        elif tp2 and ((direction > 0 and price >= tp2) or (direction < 0 and price <= tp2)):
+        elif tp2 and ((direction > 0 and high >= tp2) or (direction < 0 and low <= tp2)):
             tp_hit = "tp2"
-        elif tp1 and ((direction > 0 and price >= tp1) or (direction < 0 and price <= tp1)):
+        elif tp1 and ((direction > 0 and high >= tp1) or (direction < 0 and low <= tp1)):
             tp_hit = "tp1"
 
         if tp_hit:
