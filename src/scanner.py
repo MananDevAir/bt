@@ -59,6 +59,12 @@ def _is_session_active(session: str, now: datetime) -> bool:
             return True
         return False
 
+    if session == "us_cash":
+        # NYSE is closed on weekends
+        if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            return False
+        # Weekdays fall through to the hour check below
+
     window = SESSION_WINDOWS.get(session)
     if window is None:
         return True

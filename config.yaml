@@ -37,12 +37,12 @@ symbols:
   - name: US100
     primary:  {source: hyperliquid, ticker: "xyz:XYZ100"}
     fallback: {source: yfinance,    ticker: "^NDX"}
-    session: always
+    session: fx_week
 
   - name: US500
     primary:  {source: hyperliquid, ticker: "xyz:SP500"}
     fallback: {source: yfinance,    ticker: "^GSPC"}
-    session: always
+    session: fx_week
 
   - name: US30
     primary:  {source: yfinance,    ticker: "^DJI"}
