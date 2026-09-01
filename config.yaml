@@ -32,7 +32,7 @@ symbols:
   - name: XAUUSDT
     primary:  {source: binance,     ticker: "XAUT/USDT"}
     fallback: {source: hyperliquid, ticker: "PAXG"}
-    session: always
+    session: fx_week
 
   - name: US100
     primary:  {source: hyperliquid, ticker: "xyz:XYZ100"}
@@ -52,17 +52,17 @@ symbols:
   - name: EURUSD
     primary:  {source: hyperliquid, ticker: "xyz:EUR"}
     fallback: {source: yfinance,    ticker: "EURUSD=X"}
-    session: always
+    session: fx_week
 
   - name: GBPUSD
     primary:  {source: hyperliquid, ticker: "xyz:GBP"}
     fallback: {source: yfinance,    ticker: "GBPUSD=X"}
-    session: always
+    session: fx_week
 
   - name: USDJPY
     primary:  {source: hyperliquid, ticker: "xyz:JPY"}
     fallback: {source: yfinance,    ticker: "USDJPY=X"}
-    session: always
+    session: fx_week
 
 # how many closed candles we want per timeframe for analysis
 history:
