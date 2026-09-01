@@ -56,6 +56,8 @@ jobs:
             echo "No changes to the database. Skipping commit."
           else
             git commit -m "Auto-update database [skip ci]"
+            # Fetch and rebase remote changes to avoid non-fast-forward push errors
+            git pull --rebase origin main || true
             # Push using the built-in GITHUB_TOKEN
             git push
           fi
