@@ -480,11 +480,11 @@ def _apply_gates(result: SignalResult, cfg: Config) -> dict[str, Any]:
         htf_bias = +1 if htf_bias_str == "bullish" else (-1 if htf_bias_str == "bearish" else 0)
         if htf_bias != 0 and htf_bias != result.direction:
             gates["htf_conflict"] = {
-                "action": "downgrade", "detail": f"HTF bias={htf_bias_str} opposes signal",
-                "max_label": "WATCH"
+                "action": "note", "detail": f"HTF bias={htf_bias_str} opposes signal",
+                # "max_label": "WATCH"
             }
-            if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
-                result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
+            # if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
+            #     result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
 
     # 2. ADX gate — need ADX >= 20 on MTF for trend signals
     min_adx = float(gates_cfg.get("min_adx", 20))
@@ -532,12 +532,12 @@ def _apply_gates(result: SignalResult, cfg: Config) -> dict[str, Any]:
             macro_bias = +1 if macro_bias_str == "bullish" else (-1 if macro_bias_str == "bearish" else 0)
             if macro_bias != 0 and macro_bias != result.direction:
                 gates["macro_conflict"] = {
-                    "action": "downgrade",
+                    "action": "note",
                     "detail": f"Macro(1w) bias={macro_bias_str} opposes signal",
-                    "max_label": "WATCH"
+                    # "max_label": "WATCH"
                 }
-                if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
-                    result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
+                # if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
+                #     result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
 
     result.gate_passed = not any(
         g.get("action") == "drop" for g in gates.values()
