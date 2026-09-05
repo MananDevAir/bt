@@ -475,12 +475,43 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
     # Apply hard gates
     result.gates = _apply_gates(result, cfg)
 
-    # Compute confidence
-    confidence = 50.0 + abs(score) / 2.0
+    # Compute multi-factor dynamic confidence
+    # 1. Base confidence from score magnitude (maps 0..100 score -> 50%..85%)
+    base_conf = 50.0 + (abs_score / 100.0) * 35.0
+
+    # 2. Timeframe alignment bonus (up to +10%)
+    tf_agree = 0
+    total_tfs = len(result.tf_results)
+    if total_tfs > 0 and result.direction != 0:
+        for tf, tfr in result.tf_results.items():
+            if tfr.votes:
+                avg_v = sum(v.value for v in tfr.votes) / len(tfr.votes)
+                if (result.direction > 0 and avg_v > 0.1) or (result.direction < 0 and avg_v < -0.1):
+                    tf_agree += 1
+        tf_bonus = (tf_agree / total_tfs) * 10.0
+    else:
+        tf_bonus = 0.0
+
+    # 3. Category confluence breadth bonus (up to +8%)
+    cat_agree = 0
+    all_cats = {"trend", "structure", "momentum", "zones", "volume"}
+    cat_direction_sums: dict[str, float] = {}
+    for tfr in result.tf_results.values():
+        for v in tfr.votes:
+            cat_direction_sums[v.category] = cat_direction_sums.get(v.category, 0.0) + (v.value * result.direction)
+    for cat in all_cats:
+        if cat_direction_sums.get(cat, 0.0) > 0.2:
+            cat_agree += 1
+    cat_bonus = (cat_agree / len(all_cats)) * 8.0
+
+    # 4. Gate penalties (-5% per downgrade)
     gate_penalties = sum(1 for g, v in result.gates.items()
                          if v.get("action") == "downgrade")
-    confidence -= gate_penalties * 10
-    result.confidence = max(55.0, min(95.0, confidence))
+    penalty = gate_penalties * 5.0
+
+    # Combine and clamp between 50% and 98%
+    final_conf = base_conf + tf_bonus + cat_bonus - penalty
+    result.confidence = round(max(50.0, min(98.0, final_conf)), 1)
 
     return result
 
