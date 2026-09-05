@@ -38,15 +38,33 @@ def _ist_now() -> str:
 
 
 def _format_narration_html(text: str) -> str:
-    """Safely format LLM narration with markdown bold/italics into Telegram HTML."""
-    escaped = html.escape(text.strip())
-    # Convert **bold** to <b>bold</b>
+    """Safely format LLM narration into clean Telegram HTML without markdown artifacts."""
+    # 1. Clean markdown headers (#, ##, ###)
+    cleaned = re.sub(r"(?m)^\s*#+\s*", "", text.strip())
+
+    # 2. Escape HTML special chars (<, >, &)
+    escaped = html.escape(cleaned)
+
+    # 3. Convert **bold** to <b>bold</b> and *italic* to <i>italic</i>
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
-    # Convert *italic* to <i>italic</i>
     escaped = re.sub(r"\*(.+?)\*", r"<i>\1</i>", escaped)
-    # Convert markdown bullet points to clean unicode bullets
-    escaped = re.sub(r"(?m)^-\s+", "• ", escaped)
-    return escaped
+
+    # 4. Normalize bullets (convert -, *, + at line starts to •)
+    escaped = re.sub(r"(?m)^[\s*+-]+\s+", "• ", escaped)
+
+    # 5. Clean up any leftover stray # characters
+    escaped = escaped.replace("#", "")
+
+    # 6. Emphasize standard bullet headers (• Entry:, • Stop-Loss:, • Targets:)
+    escaped = re.sub(r"•\s*(Entry|Stop-Loss|Stop|Targets|Target):\s*", r"• <b>\1:</b> ", escaped, flags=re.IGNORECASE)
+
+    # 7. If bullet points exist, filter out non-bullet clutter/preamble headers
+    lines = [line.strip() for line in escaped.splitlines() if line.strip()]
+    bullet_lines = [line for line in lines if line.startswith("•")]
+    if len(bullet_lines) >= 2:
+        return "\n".join(bullet_lines)
+
+    return "\n".join(lines)
 
 
 def format_signal(signal: Any, plan: Any | None,

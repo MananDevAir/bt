@@ -33,16 +33,20 @@ __all__ = ["explain"]
 URL = "https://router.huggingface.co/v1/chat/completions"
 
 SYSTEM_PROMPT = """\
-You are a senior Price Action (PA) trader and analyst.
-Your job is to explain the exact logic behind a trade signal to the user in a highly educational and detailed manner.
+You are an institutional Price Action (PA) & Smart Money Concepts (SMC) trader.
+Write a crisp, clean 3-bullet technical rationale for a Telegram alert based on the provided facts.
 
-STRICT RULES:
-- Use the exact direction, entry, stop-loss, and take-profit numbers from the data.
-- Explain *why* the entry level was chosen based on the provided Price Action/SMC data (e.g. Order Blocks, FVGs, Support/Resistance).
-- Explain *why* the stop loss and take profit are placed where they are.
-- DO NOT hallucinate indicators or zones that are not in the provided fact sheet.
-- Never say "buy" if the signal is SHORT, or "sell" if it is LONG.
-- Keep the explanation professional and logic-driven, roughly 100-250 words.
+STRICT FORMAT (Output ONLY these 3 bullets, nothing else):
+• Entry: <1 sentence on technical reason for entry (e.g. FVG fill, Order Block, S/R retest, CHoCH/BOS)>
+• Stop-Loss: <1 sentence on why the SL is placed safely beyond support/resistance/sweep>
+• Targets: <1 sentence on which key resistance/liquidity pools TP1-TP3 target>
+
+RULES:
+- Keep it concise, punchy, and professional (under 80 words total).
+- Do NOT repeat numeric tables or list "Trade Overview" (the user already has the price table).
+- Do NOT use markdown headers (no ### or ##).
+- Do NOT add preamble, intro, or concluding summary.
+- Strictly use the technical context from the provided facts.
 """
 
 
@@ -174,29 +178,34 @@ def _call_hf(token: str, model: str, prompt: str,
 
 
 def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
-    """Validate the reply contains key levels without draconian word blocks."""
-    import unicodedata
+    """Validate the reply is clean, non-contradictory, and not bloated with markdown headers."""
+    if not reply or len(reply.strip()) < 15:
+        return False
 
-    sl = facts.get("sl")
-    if sl is not None:
-        norm_reply = unicodedata.normalize("NFKD", reply)
-        clean_reply = norm_reply.replace(",", "").replace("_", "").replace(" ", "")
-        sl_str = str(sl)
-        sl_clean = sl_str[:-2] if sl_str.endswith(".0") else sl_str
-        sl_clean = sl_clean.replace(",", "").replace("_", "").replace(" ", "")
+    lower = reply.lower()
 
-        if sl_clean not in clean_reply and sl_str not in clean_reply:
-            log.warning("LLM reply missing SL (%s), rejecting", sl)
+    # Reject preamble or markdown header clutter
+    if "###" in reply or "trade overview" in lower or "here is" in lower or "sure," in lower:
+        log.warning("LLM reply contains header/preamble clutter, rejecting")
+        return False
+
+    direction = facts.get("direction", 0)
+    if direction > 0:
+        if re.search(r"\b(short bias|bearish bias)\b", lower):
+            log.warning("LLM reply contradicts LONG signal direction, rejecting")
+            return False
+    elif direction < 0:
+        if re.search(r"\b(long bias|bullish bias)\b", lower):
+            log.warning("LLM reply contradicts SHORT signal direction, rejecting")
             return False
 
     return True
 
+
 def _build_user_prompt(facts: dict[str, Any]) -> str:
     """Build the user prompt from the fact sheet — compact JSON."""
     return (
-        "Here is the signal fact sheet containing Price Action (PA) and SMC context. "
-        "Please provide a detailed PA explanation of the trade logic, explaining the "
-        "reasons for the Entry, Stop Loss, and Take Profit levels based on the data.\n\n"
+        "Explain the Price Action and SMC trade logic in 3 crisp bullets (Entry, Stop-Loss, Targets):\n\n"
         f"```json\n{json.dumps(facts, indent=2, default=str)}\n```"
     )
 
