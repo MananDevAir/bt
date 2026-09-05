@@ -168,10 +168,11 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         kz_name = ""
 
     # Invalidation
+    dec = _decimals(sl)
     if direction > 0:
-        inv = f"HTF/MTF close below SL ({sl:,.2f})"
+        inv = f"HTF/MTF close below SL ({sl:,.{dec}f})"
     else:
-        inv = f"HTF/MTF close above SL ({sl:,.2f})"
+        inv = f"HTF/MTF close above SL ({sl:,.{dec}f})"
 
     return TradePlan(
         direction=direction,
@@ -321,7 +322,7 @@ def _decimals(price: float) -> int:
     if price >= 10:
         return 2
     if price >= 1:
-        return 4
+        return 5
     return 5
 
 
