@@ -364,10 +364,17 @@ def _zone_votes(pa_data: dict, smc_data: dict, close: float,
                                   f"price in {'bull' if fib_dir > 0 else 'bear'} fib OTE ({fib.ratio:.3f} @ {fib.price:,.0f})"))
                 break
 
-    # Liquidity sweeps — recent sweep is a reversal hint
-    for sweep in smc_data.get("liquidity_sweeps", [])[-2:]:
-        votes.append(Vote("liq_sweep", "zones", 0.6 * sweep.direction,
-                          f"{'bull' if sweep.direction > 0 else 'bear'} liq sweep"))
+    # Liquidity sweeps — net direction over last 5 sweeps is a reversal hint.
+    # Using a net vote (sum / count) is symmetric under chart reflection:
+    # flipping prices inverts every sweep.direction, so the net inverts too.
+    # The old [-2:] slice could yield two same-sign votes on both the original
+    # and mirrored chart, producing no sign-flip and a directional bias.
+    _sweeps = smc_data.get("liquidity_sweeps", [])[-5:]
+    if _sweeps:
+        net_dir = sum(s.direction for s in _sweeps) / len(_sweeps)
+        if abs(net_dir) > 0.1:  # only vote when there is a clear lean
+            votes.append(Vote("liq_sweep", "zones", round(0.6 * net_dir, 3),
+                              f"{'bull' if net_dir > 0 else 'bear'} liq sweep (net {net_dir:+.2f})"))
 
     # Candle patterns (engulfing, pin bar, shooting star, marubozu) near zones.
     # Only the last 3 bars are evaluated; bias=0 (doji, inside bar) are skipped.

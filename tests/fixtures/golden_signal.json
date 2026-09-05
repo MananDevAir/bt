@@ -1,5 +1,5 @@
 {
-  "confidence": 60.1,
+  "confidence": 60.6,
   "direction": 1,
   "gate_passed": true,
   "gates": {
@@ -15,15 +15,15 @@
   "label": "NEUTRAL",
   "max_possible": 1200.0,
   "plan": null,
-  "raw_score": 147.84619,
-  "score": 12.3,
+  "raw_score": 163.553619,
+  "score": 13.6,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
       "regime": "normal",
       "structure_bias": "bearish",
-      "vote_count": 29,
-      "vote_sum": 4.61,
+      "vote_count": 28,
+      "vote_sum": 5.45,
       "votes": [
         {
           "category": "momentum",
@@ -165,15 +165,9 @@
         },
         {
           "category": "zones",
-          "detail": "bear liq sweep",
+          "detail": "bear liq sweep (net -0.60)",
           "name": "liq_sweep",
-          "value": -0.6
-        },
-        {
-          "category": "zones",
-          "detail": "bear liq sweep",
-          "name": "liq_sweep",
-          "value": -0.6
+          "value": -0.36
         },
         {
           "category": "zones",
@@ -204,8 +198,8 @@
     "1d": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 25,
-      "vote_sum": -4.45,
+      "vote_count": 24,
+      "vote_sum": -3.37,
       "votes": [
         {
           "category": "momentum",
@@ -323,15 +317,9 @@
         },
         {
           "category": "zones",
-          "detail": "bear liq sweep",
+          "detail": "bear liq sweep (net -0.20)",
           "name": "liq_sweep",
-          "value": -0.6
-        },
-        {
-          "category": "zones",
-          "detail": "bear liq sweep",
-          "name": "liq_sweep",
-          "value": -0.6
+          "value": -0.12
         },
         {
           "category": "zones",
@@ -362,8 +350,8 @@
     "1h": {
       "regime": "expanding",
       "structure_bias": "bullish",
-      "vote_count": 27,
-      "vote_sum": 6.05,
+      "vote_count": 26,
+      "vote_sum": 7.37,
       "votes": [
         {
           "category": "momentum",
@@ -493,15 +481,9 @@
         },
         {
           "category": "zones",
-          "detail": "bear liq sweep",
+          "detail": "bull liq sweep (net +0.20)",
           "name": "liq_sweep",
-          "value": -0.6
-        },
-        {
-          "category": "zones",
-          "detail": "bear liq sweep",
-          "name": "liq_sweep",
-          "value": -0.6
+          "value": 0.12
         },
         {
           "category": "zones",
@@ -532,8 +514,8 @@
     "1w": {
       "regime": "quiet",
       "structure_bias": "bullish",
-      "vote_count": 27,
-      "vote_sum": 8.13,
+      "vote_count": 26,
+      "vote_sum": 9.21,
       "votes": [
         {
           "category": "momentum",
@@ -663,15 +645,9 @@
         },
         {
           "category": "zones",
-          "detail": "bear liq sweep",
+          "detail": "bear liq sweep (net -0.20)",
           "name": "liq_sweep",
-          "value": -0.6
-        },
-        {
-          "category": "zones",
-          "detail": "bear liq sweep",
-          "name": "liq_sweep",
-          "value": -0.6
+          "value": -0.12
         },
         {
           "category": "zones",
@@ -702,8 +678,8 @@
     "4h": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 27,
-      "vote_sum": 1.73,
+      "vote_count": 26,
+      "vote_sum": 0.65,
       "votes": [
         {
           "category": "momentum",
@@ -833,15 +809,9 @@
         },
         {
           "category": "zones",
-          "detail": "bull liq sweep",
+          "detail": "bull liq sweep (net +0.20)",
           "name": "liq_sweep",
-          "value": 0.6
-        },
-        {
-          "category": "zones",
-          "detail": "bull liq sweep",
-          "name": "liq_sweep",
-          "value": 0.6
+          "value": 0.12
         },
         {
           "category": "zones",
