@@ -113,6 +113,18 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         }
         return None  # stop too wide
 
+    # Price location gate: is price already past the stop loss?
+    if direction > 0 and current_close < sl:
+        signal.gates["already_stopped"] = {
+            "action": "drop", "detail": f"price {current_close} already below SL {sl}"
+        }
+        return None
+    if direction < 0 and current_close > sl:
+        signal.gates["already_stopped"] = {
+            "action": "drop", "detail": f"price {current_close} already above SL {sl}"
+        }
+        return None
+
     # ----- Take profits -----
     tp1 = entry_mid + direction * tp_r_mults[0] * risk
     tp2 = entry_mid + direction * tp_r_mults[1] * risk
