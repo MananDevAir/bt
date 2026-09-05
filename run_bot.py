@@ -148,7 +148,22 @@ def main():
         elif args.scan_once:
             cmd_scan_once(cfg, conn, live=args.live)
         elif args.github_actions:
-            cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+            sleep_cfg = cfg.get("sleep_window", default={}) or {}
+            is_sleeping = False
+            if sleep_cfg.get("enabled", False):
+                from datetime import datetime, timezone, timedelta
+                IST = timezone(timedelta(hours=5, minutes=30))
+                ist_now = datetime.now(IST)
+                start_h = int(sleep_cfg.get("start_hour_ist", 0))
+                end_h = int(sleep_cfg.get("end_hour_ist", 5))
+                if start_h <= ist_now.hour < end_h:
+                    is_sleeping = True
+                    
+            if is_sleeping:
+                import logging
+                logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
+            else:
+                cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
         else:
             cmd_loop(cfg, conn, live=args.live)
     finally:
