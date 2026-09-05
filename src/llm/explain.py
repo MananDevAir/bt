@@ -33,14 +33,16 @@ __all__ = ["explain"]
 URL = "https://router.huggingface.co/v1/chat/completions"
 
 SYSTEM_PROMPT = """\
-You are a concise market analyst writing a 2-3 sentence signal summary.
+You are a senior Price Action (PA) trader and analyst.
+Your job is to explain the exact logic behind a trade signal to the user in a highly educational and detailed manner.
 
 STRICT RULES:
-- Only describe the facts given to you. Do NOT invent direction, levels, or indicators.
 - Use the exact direction, entry, stop-loss, and take-profit numbers from the data.
+- Explain *why* the entry level was chosen based on the provided Price Action/SMC data (e.g. Order Blocks, FVGs, Support/Resistance).
+- Explain *why* the stop loss and take profit are placed where they are.
+- DO NOT hallucinate indicators or zones that are not in the provided fact sheet.
 - Never say "buy" if the signal is SHORT, or "sell" if it is LONG.
-- No disclaimers, no preamble, no markdown. Plain English only.
-- Maximum 90 words.
+- Keep the explanation professional and logic-driven, roughly 100-250 words.
 """
 
 
@@ -72,7 +74,7 @@ def _get_models(cfg: Config) -> list[str]:
 
 
 def _call_groq(api_key: str, model: str, prompt: str,
-               timeout: int = 8, max_tokens: int = 512) -> str | None:
+               timeout: int = 8, max_tokens: int = 1500) -> str | None:
     """Make an ultra-fast (<0.4s) Groq API call."""
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -102,7 +104,7 @@ def _call_groq(api_key: str, model: str, prompt: str,
 
 
 def _call_hf(token: str, model: str, prompt: str,
-             timeout: int = 12, max_tokens: int = 512) -> str | None:
+             timeout: int = 12, max_tokens: int = 1500) -> str | None:
     """Make a single HF Inference API call.  Returns text or None."""
     headers = {
         "Authorization": f"Bearer {token}",
@@ -172,42 +174,29 @@ def _call_hf(token: str, model: str, prompt: str,
 
 
 def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
-    """Reject replies that contradict the rule engine's direction or omit numbers."""
-    direction = facts.get("direction", 0)
-    lower = reply.lower()
+    """Validate the reply contains key levels without draconian word blocks."""
+    import unicodedata
 
-    if direction > 0:
-        # Long signal — reject if it says "sell" or "short" prominently
-        if re.search(r"\b(sell|short|bearish)\b", lower):
-            # Allow if "short-term" or "oversold" context
-            if not re.search(r"\b(short[- ]term|oversold)\b", lower):
-                log.warning("LLM reply contradicts LONG signal, rejecting")
-                return False
-    elif direction < 0:
-        # Short signal — reject if it says "buy" or "long" prominently
-        if re.search(r"\b(buy|long|bullish)\b", lower):
-            if not re.search(r"\b(long[- ]term|overbought)\b", lower):
-                log.warning("LLM reply contradicts SHORT signal, rejecting")
-                return False
+    sl = facts.get("sl")
+    if sl is not None:
+        norm_reply = unicodedata.normalize("NFKD", reply)
+        clean_reply = norm_reply.replace(",", "").replace("_", "").replace(" ", "")
+        sl_str = str(sl)
+        sl_clean = sl_str[:-2] if sl_str.endswith(".0") else sl_str
+        sl_clean = sl_clean.replace(",", "").replace("_", "").replace(" ", "")
 
-    # Check for preamble leakage
-    if "here is" in lower or "summary:" in lower or "sure," in lower:
-        log.warning("LLM reply contains preamble leakage, rejecting")
-        return False
-        
-    # Check if exact stop-loss is mentioned (prevents rounding/hallucinations)
-    sl = str(facts.get("sl", ""))
-    if sl and sl not in reply:
-        log.warning("LLM reply hallucinated or rounded SL (%s), rejecting", sl)
-        return False
+        if sl_clean not in clean_reply and sl_str not in clean_reply:
+            log.warning("LLM reply missing SL (%s), rejecting", sl)
+            return False
 
     return True
 
 def _build_user_prompt(facts: dict[str, Any]) -> str:
     """Build the user prompt from the fact sheet — compact JSON."""
     return (
-        "Here is the signal fact sheet. Summarise it in 2-3 sentences "
-        "for a Telegram alert. Use the exact numbers.\n\n"
+        "Here is the signal fact sheet containing Price Action (PA) and SMC context. "
+        "Please provide a detailed PA explanation of the trade logic, explaining the "
+        "reasons for the Entry, Stop Loss, and Take Profit levels based on the data.\n\n"
         f"```json\n{json.dumps(facts, indent=2, default=str)}\n```"
     )
 

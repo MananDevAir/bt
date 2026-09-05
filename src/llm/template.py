@@ -109,6 +109,44 @@ def build_fact_sheet(signal: Any, plan: Any | None = None) -> dict[str, Any]:
                 triggers.append(v.detail)
     facts["triggers"] = triggers[:8]  # cap for prompt size
 
+    # Price Action & SMC Context (Aggregate from Timeframes)
+    pa_context = {}
+    for tf, tfr in signal.tf_results.items():
+        tf_pa = {}
+        if getattr(tfr, "pa", None):
+            sr_zones = [
+                f"{sr.kind} at {sr.mid:,.2f}" for sr in tfr.pa.get("sr_zones", [])[:2]
+            ]
+            if sr_zones:
+                tf_pa["support_resistance"] = sr_zones
+        if getattr(tfr, "smc", None):
+            obs = [
+                f"{'bullish' if ob.direction > 0 else 'bearish'} OB at {ob.lo:,.2f}-{ob.hi:,.2f}"
+                for ob in tfr.smc.get("order_blocks_unmitigated", [])[:2]
+            ]
+            if obs:
+                tf_pa["unmitigated_order_blocks"] = obs
+            fvgs = [
+                f"{'bullish' if fvg.direction > 0 else 'bearish'} FVG at {fvg.lo:,.2f}-{fvg.hi:,.2f} ({fvg.filled_pct:.0%} filled)"
+                for fvg in tfr.smc.get("fvg_open", [])[:2]
+            ]
+            if fvgs:
+                tf_pa["open_fvgs"] = fvgs
+            sweeps = [
+                f"{'bullish' if sw.direction > 0 else 'bearish'} sweep at {sw.swept_level:,.2f}"
+                for sw in tfr.smc.get("liquidity_sweeps", [])[-2:]
+            ]
+            if sweeps:
+                tf_pa["liquidity_sweeps"] = sweeps
+            pd = tfr.smc.get("premium_discount")
+            if pd:
+                tf_pa["premium_discount"] = f"{pd.zone} zone ({pd.pct:.0f}%)"
+        if tf_pa:
+            pa_context[tf] = tf_pa
+    
+    if pa_context:
+        facts["pa_context"] = pa_context
+
     # Gates
     if signal.gates:
         facts["gates"] = dict(signal.gates)

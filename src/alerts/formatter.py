@@ -9,6 +9,8 @@ Design goals:
 """
 from __future__ import annotations
 
+import html
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -33,6 +35,18 @@ def _fmt_price(val: float, symbol: str = "") -> str:
 def _ist_now() -> str:
     """Current time in IST, formatted for display."""
     return datetime.now(IST).strftime("%d %b %Y, %I:%M %p IST")
+
+
+def _format_narration_html(text: str) -> str:
+    """Safely format LLM narration with markdown bold/italics into Telegram HTML."""
+    escaped = html.escape(text.strip())
+    # Convert **bold** to <b>bold</b>
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
+    # Convert *italic* to <i>italic</i>
+    escaped = re.sub(r"\*(.+?)\*", r"<i>\1</i>", escaped)
+    # Convert markdown bullet points to clean unicode bullets
+    escaped = re.sub(r"(?m)^-\s+", "• ", escaped)
+    return escaped
 
 
 def format_signal(signal: Any, plan: Any | None,
@@ -150,12 +164,10 @@ def format_signal(signal: Any, plan: Any | None,
             lines.append(f"\u26a0\ufe0f Cancel if: {plan.invalidation}")
             lines.append("")
 
-    # ── AI Insight (narration — short) ──────────────
+    # ── Price Action Logic & Analysis ──────────────
     if narration:
-        short = narration[:200].rstrip()
-        if len(narration) > 200:
-            short += "..."
-        lines.append(f"\U0001f4ac {short}")
+        lines.append("🧠 <b>Price Action Logic:</b>")
+        lines.append(_format_narration_html(narration))
         lines.append("")
 
     # ── Footer ──────────────────────────────────────
