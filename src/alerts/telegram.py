@@ -232,12 +232,13 @@ def handle_command(command: str, cfg: Config,
         return (
             "<b>Signal Bot Commands</b>\n"
             "/status  \u2014  Current market scores\n"
+            "/check &lt;sym&gt;  \u2014  Live real-time scan on demand\n"
+            "/levels &lt;sym&gt;  \u2014  Live support, resistance & OBs\n"
             "/last  \u2014  Last emitted signal\n"
             "/report  \u2014  Today's performance\n"
             "/watchlist  \u2014  Active symbols\n"
             "/streak  \u2014  Win/loss streak status\n"
             "/config  \u2014  Current settings\n"
-            "/levels &lt;sym&gt;  \u2014  Live support, resistance & OBs\n"
             "/mute &lt;sym&gt; [h]  \u2014  Temporarily mute an asset\n"
             "/unmute &lt;sym&gt;  \u2014  Unmute an asset\n"
             "/mutes  \u2014  List muted assets\n"
@@ -248,6 +249,73 @@ def handle_command(command: str, cfg: Config,
             "<b>Settable keys:</b>\n"
             "  watch, cooldown, min_rr, max_stop_atr, risk_pct"
         )
+
+    elif cmd in ("/check", "/scan"):
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            parts = command.strip().split()
+            if len(parts) < 2:
+                symbols_str = ", ".join(s.name for s in cfg.symbols)
+                return f"\u26a0 Usage: /check &lt;symbol&gt;\nAvailable: {symbols_str}"
+
+            sym_name = parts[1].upper()
+            sym = next((s for s in cfg.symbols if s.name.upper() == sym_name), None)
+            if not sym:
+                return f"\u26a0 Unknown symbol: {sym_name}\nAvailable: {', '.join(s.name for s in cfg.symbols)}"
+
+            from datetime import datetime, timezone
+            from ..data.budget import Budget
+            from ..data.router import Router
+            from ..analysis.confluence import score_symbol
+            from ..analysis.levels import generate_plan
+            from .formatter import _fmt_price
+
+            budget = Budget(conn, 750, 7)
+            router = Router(cfg, conn, budget)
+            now = datetime.now(timezone.utc)
+            res = router.fetch_symbol(sym, now)
+
+            if not res.ok:
+                return f"\u26a0 Could not fetch market data for {sym.name}: {'; '.join(res.notes)}"
+
+            signal = score_symbol(res.frames, sym.name, cfg)
+            plan = generate_plan(signal, cfg)
+
+            arrow = "\U0001f7e2" if signal.direction > 0 else ("\U0001f534" if signal.direction < 0 else "\u26aa")
+            lines = [
+                f"\U0001f50d <b>Real-Time Check: {sym.name}</b>",
+                f"{arrow} Score: <b>{signal.score:+.1f}</b>  |  Label: <b>{signal.label}</b>",
+                f"\U0001f4ca Confidence: {signal.confidence:.0f}%",
+            ]
+
+            if plan:
+                if plan.trade_type:
+                    lines.append(f"\u23f1 <b>Type:</b> {plan.trade_type}")
+                if plan.killzone:
+                    lines.append(f"\u26a1 <b>Session:</b> {plan.session} ({plan.killzone})")
+                elif plan.session:
+                    lines.append(f"\U0001f310 <b>Session:</b> {plan.session}")
+                if plan.brief_reason:
+                    lines.append(f"\U0001f4a1 <i>{plan.brief_reason}</i>")
+
+                fp = lambda v: _fmt_price(v, sym.name)
+                lines.append("")
+                lines.append("\U0001f3af <b>Active Setup:</b>")
+                lines.append(f"  Entry:  {fp(plan.entry_low)} \u2013 {fp(plan.entry_high)}")
+                lines.append(f"  Stop:    {fp(plan.sl)}")
+                lines.append(f"  TP1:     {fp(plan.tp1)} (50%)")
+                lines.append(f"  TP2:     {fp(plan.tp2)} (30%)")
+                lines.append(f"  TP3:     {fp(plan.tp3)} (20%)")
+                lines.append(f"  R:R:     <b>{plan.rr:.1f}</b>  |  Risk: {plan.risk_pct:.1f}%")
+            else:
+                lines.append("")
+                lines.append("<i>No active trigger setup (market in consolidation or neutral).</i>")
+
+            return "\n".join(lines)
+        except Exception as exc:
+            log.warning("Error in /check: %s", exc)
+            return f"\u26a0 Error checking symbol: {exc}"
 
     elif cmd == "/streak":
         if conn is None:

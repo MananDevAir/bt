@@ -4,6 +4,7 @@ Usage:
     python run_bot.py               # start the scan loop (dry_run from config)
     python run_bot.py --live        # override dry_run to False (send real alerts)
     python run_bot.py --scan-once   # run one scan and exit
+    python run_bot.py --continuous  # run 24/7 continuous relay runner (5.5h session, 15m intervals)
     python run_bot.py --report      # generate and send daily report
     python run_bot.py --status      # print current scores (no Telegram)
 """
@@ -117,132 +118,6 @@ def cmd_status(cfg, conn):
               f"{trade_type:12s}  {brief}")
 
     print()
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Multi-Asset Signal Bot",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument("--live", action="store_true",
-                        help="Override dry_run to False (send real Telegram alerts)")
-    parser.add_argument("--scan-once", action="store_true",
-                        help="Run one scan cycle and exit")
-    parser.add_argument("--continuous", action="store_true",
-                        help="Run 24/7 continuous relay runner (5.5h session, 15m intervals, auto-dispatches next)")
-    parser.add_argument("--github-actions", action="store_true",
-                        help="Run for GitHub Actions: one scan + outcome check in live mode")
-    parser.add_argument("--report", action="store_true",
-                        help="Generate and send daily report")
-    parser.add_argument("--status", action="store_true",
-                        help="Print current scores (no Telegram)")
-    parser.add_argument("--log-level", default="INFO",
-                        help="Logging level (DEBUG, INFO, WARNING)")
-    args = parser.parse_args()
-
-    _setup_logging(args.log_level)
-    cfg = config_mod.load()
-    conn = db.connect(cfg.db_path)
-
-    try:
-        if args.status:
-            cmd_status(cfg, conn)
-        elif args.report:
-            cmd_report(cfg, conn, live=args.live)
-        elif args.scan_once:
-            cmd_scan_once(cfg, conn, live=args.live)
-        elif args.continuous:
-            cmd_continuous_relay(cfg, conn)
-        elif args.github_actions:
-            # Process any pending Telegram interactive commands
-            try:
-                from src.alerts.telegram import poll_commands
-                poll_commands(cfg, conn)
-            except Exception as exc:
-                import logging
-                logging.getLogger(__name__).debug("Telegram polling skipped: %s", exc)
-
-            sleep_cfg = cfg.get("sleep_window", default={}) or {}
-            is_sleeping = False
-            IST = timezone(timedelta(hours=5, minutes=30))
-            ist_now = datetime.now(IST)
-            if sleep_cfg.get("enabled", False):
-                start_h = int(sleep_cfg.get("start_hour_ist", 0))
-                end_h = int(sleep_cfg.get("end_hour_ist", 5))
-                if start_h <= ist_now.hour < end_h:
-                    is_sleeping = True
-                    
-            if is_sleeping:
-                import logging
-                logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
-            else:
-                cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
-
-            # Check if any new commands arrived during the scan
-            try:
-                from src.alerts.telegram import poll_commands
-                poll_commands(cfg, conn)
-            except Exception:
-                pass
-
-            # Daily summary at 9 PM IST (21:00)
-            if ist_now.hour == 21 and ist_now.minute < 15:
-                try:
-                    from src.store import signals as sig_store
-                    from src.alerts.telegram import send_text
-                    today_start_ms = int(datetime(ist_now.year, ist_now.month, ist_now.day,
-                                                  tzinfo=IST).timestamp() * 1000)
-                    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-                    # Count today's scans and signals
-                    sig_count = conn.execute(
-                        "SELECT COUNT(*) FROM signals WHERE ts > ?", (today_start_ms,)
-                    ).fetchone()[0]
-                    open_count = conn.execute(
-                        "SELECT COUNT(*) FROM signals WHERE status = 'open'"
-                    ).fetchone()[0]
-                    won_count = conn.execute(
-                        "SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'won'",
-                        (today_start_ms,)
-                    ).fetchone()[0]
-                    lost_count = conn.execute(
-                        "SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'lost'",
-                        (today_start_ms,)
-                    ).fetchone()[0]
-                    summary_msg = (
-                        f"\U0001f4ca <b>Daily Summary</b>\n"
-                        f"\U0001f4cb Signals today: {sig_count}  |  Open: {open_count}\n"
-                        f"\U0001f7e2 Won: {won_count}  |  \U0001f534 Lost: {lost_count}\n"
-                        f"\u2705 Bot healthy\n"
-                        f"\U0001f552 {ist_now.strftime('%d %b %Y, %I:%M %p IST')}"
-                    )
-                    send_text(summary_msg)
-                except Exception as exc:
-                    import logging
-                    logging.getLogger(__name__).warning("Daily summary failed: %s", exc)
-
-            # Daily report at midnight UTC
-            utc_now = datetime.now(timezone.utc)
-            if utc_now.hour == 0 and utc_now.minute < 15:
-                try:
-                    from src.tracking.report import daily_report
-                    daily_report(conn, cfg, send=True)
-                except Exception as exc:
-                    import logging
-                    logging.getLogger(__name__).warning("Daily report failed: %s", exc)
-
-            # Lightweight DB maintenance (checkpoint WAL, expire old mutes)
-            try:
-                from src.maintenance import cleanup
-                data_dir = cfg.db_path.parent
-                cleanup(conn, data_dir, execute=True)
-            except Exception as exc:
-                import logging
-                logging.getLogger(__name__).debug("Maintenance cleanup skipped: %s", exc)
-        else:
-            cmd_loop(cfg, conn, live=args.live)
-    finally:
-        conn.close()
 
 
 def _git_commit_push(db_path):
@@ -389,18 +264,151 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
 
         _git_commit_push(cfg.db_path)
 
-        # 7. Sleep until next 15-minute mark
+        # 7. Responsive wait until next 15-minute mark (polls Telegram every 5s)
         elapsed = time.time() - loop_start
         sleep_sec = max(5, (interval_minutes * 60) - elapsed)
-        _log.info("Cycle #%d completed in %.1fs. Sleeping %.0fs until next scan...",
+        _log.info("Cycle #%d completed in %.1fs. Listening for Telegram commands for %.0fs...",
                   cycle, elapsed, sleep_sec)
-        time.sleep(sleep_sec)
+        sleep_until = time.time() + sleep_sec
+        while time.time() < sleep_until:
+            try:
+                from src.alerts.telegram import poll_commands
+                poll_commands(cfg, conn)
+            except Exception:
+                pass
+            time.sleep(5)
 
     # 8. Finished 5.5h session — trigger next relay runner
     _log.info("Relay session limit reached (%.1f hours). Triggering next relay runner...",
               (time.time() - start_ts) / 3600)
     _trigger_next_relay()
     _log.info("Relay runner handed off successfully. Exiting cleanly.")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Multi-Asset Signal Bot",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--live", action="store_true",
+                        help="Override dry_run to False (send real Telegram alerts)")
+    parser.add_argument("--scan-once", action="store_true",
+                        help="Run one scan cycle and exit")
+    parser.add_argument("--continuous", action="store_true",
+                        help="Run 24/7 continuous relay runner (5.5h session, 15m intervals, auto-dispatches next)")
+    parser.add_argument("--github-actions", action="store_true",
+                        help="Run for GitHub Actions: one scan + outcome check in live mode")
+    parser.add_argument("--report", action="store_true",
+                        help="Generate and send daily report")
+    parser.add_argument("--status", action="store_true",
+                        help="Print current scores (no Telegram)")
+    parser.add_argument("--log-level", default="INFO",
+                        help="Logging level (DEBUG, INFO, WARNING)")
+    args = parser.parse_args()
+
+    _setup_logging(args.log_level)
+    cfg = config_mod.load()
+    conn = db.connect(cfg.db_path)
+
+    try:
+        if args.status:
+            cmd_status(cfg, conn)
+        elif args.report:
+            cmd_report(cfg, conn, live=args.live)
+        elif args.scan_once:
+            cmd_scan_once(cfg, conn, live=args.live)
+        elif args.continuous:
+            cmd_continuous_relay(cfg, conn)
+        elif args.github_actions:
+            # Process any pending Telegram interactive commands
+            try:
+                from src.alerts.telegram import poll_commands
+                poll_commands(cfg, conn)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).debug("Telegram polling skipped: %s", exc)
+
+            sleep_cfg = cfg.get("sleep_window", default={}) or {}
+            is_sleeping = False
+            IST = timezone(timedelta(hours=5, minutes=30))
+            ist_now = datetime.now(IST)
+            if sleep_cfg.get("enabled", False):
+                start_h = int(sleep_cfg.get("start_hour_ist", 0))
+                end_h = int(sleep_cfg.get("end_hour_ist", 5))
+                if start_h <= ist_now.hour < end_h:
+                    is_sleeping = True
+                    
+            if is_sleeping:
+                import logging
+                logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
+            else:
+                cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+
+            # Check if any new commands arrived during the scan
+            try:
+                from src.alerts.telegram import poll_commands
+                poll_commands(cfg, conn)
+            except Exception:
+                pass
+
+            # Daily summary at 9 PM IST (21:00)
+            if ist_now.hour == 21 and ist_now.minute < 15:
+                try:
+                    from src.store import signals as sig_store
+                    from src.alerts.telegram import send_text
+                    today_start_ms = int(datetime(ist_now.year, ist_now.month, ist_now.day,
+                                                  tzinfo=IST).timestamp() * 1000)
+                    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                    # Count today's scans and signals
+                    sig_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE ts > ?", (today_start_ms,)
+                    ).fetchone()[0]
+                    open_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE status = 'open'"
+                    ).fetchone()[0]
+                    won_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'won'",
+                        (today_start_ms,)
+                    ).fetchone()[0]
+                    lost_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'lost'",
+                        (today_start_ms,)
+                    ).fetchone()[0]
+                    summary_msg = (
+                        f"\U0001f4ca <b>Daily Summary</b>\n"
+                        f"\U0001f4cb Signals today: {sig_count}  |  Open: {open_count}\n"
+                        f"\U0001f7e2 Won: {won_count}  |  \U0001f534 Lost: {lost_count}\n"
+                        f"\u2705 Bot healthy\n"
+                        f"\U0001f552 {ist_now.strftime('%d %b %Y, %I:%M %p IST')}"
+                    )
+                    send_text(summary_msg)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Daily summary failed: %s", exc)
+
+            # Daily report at midnight UTC
+            utc_now = datetime.now(timezone.utc)
+            if utc_now.hour == 0 and utc_now.minute < 15:
+                try:
+                    from src.tracking.report import daily_report
+                    daily_report(conn, cfg, send=True)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Daily report failed: %s", exc)
+
+            # Lightweight DB maintenance (checkpoint WAL, expire old mutes)
+            try:
+                from src.maintenance import cleanup
+                data_dir = cfg.db_path.parent
+                cleanup(conn, data_dir, execute=True)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).debug("Maintenance cleanup skipped: %s", exc)
+        else:
+            cmd_loop(cfg, conn, live=args.live)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

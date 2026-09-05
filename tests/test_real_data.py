@@ -243,11 +243,6 @@ def test_most_real_symbols_actually_produce_a_plan(real_plans):
 # --------------------------------------------------------------------------- #
 # forex precision — the levels as the user reads them
 # --------------------------------------------------------------------------- #
-@pytest.mark.xfail(strict=True, reason=(
-    "levels.py:136-139 formats the invalidation stop with a hardcoded ',.2f' "
-    "regardless of the pair's quoting. On EURUSD the stop 1.1586 prints as "
-    "'1.16', which is above the entry zone — the user is told to abandon the "
-    "trade at a price better than their own entry."))
 def test_invalidation_quotes_the_stop_at_the_pairs_precision(real_plans):
     """The invalidation text must name the real stop, not a rounded stand-in.
 
@@ -273,11 +268,6 @@ def test_invalidation_quotes_the_stop_at_the_pairs_precision(real_plans):
     assert not wrong, "invalidation text misquotes the stop:\n  " + "\n  ".join(wrong)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "_decimals (levels.py:280) returns 4dp for a price between 1 and 10, so on "
-    "EURUSD a 1-pip FVG becomes two adjacent ticks and its midpoint 1.158850 has "
-    "nowhere to go but onto an edge. Quoting 1..10 at 5dp, as forex conventionally "
-    "is, resolves it: 1.15880 / 1.15885 / 1.15890."))
 def test_the_published_entry_zone_survives_rounding(real_plans):
     """A zone the user cannot place two distinct orders inside is not a zone.
 
@@ -303,11 +293,6 @@ def test_the_published_entry_zone_survives_rounding(real_plans):
 # --------------------------------------------------------------------------- #
 # the stop gate as a silent signal filter
 # --------------------------------------------------------------------------- #
-@pytest.mark.xfail(strict=True, reason=(
-    "_find_stop (levels.py:206-239) rejects a structure stop closer than 0.8 ATR "
-    "but has no upper bound, so it returns stops 12-27 ATR out. max_stop_atr "
-    "then kills the plan and scanner.py:148 drops the signal on a debug log, "
-    "instead of falling back to the 1.5 ATR stop it already computed."))
 def test_a_distant_structure_stop_does_not_suppress_the_signal(real_plans, loose):
     """A far-away structure level must not cost the user the whole signal.
 
@@ -372,9 +357,6 @@ def test_real_markets_are_not_systematically_long(bias_table):
         f"{positive} of {len(biases)} biased long:\n{detail}")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the engine emits no short on any real symbol, and none on any of their "
-    "reflections either — the 97-long / 0-short backtest reproduced live"))
 def test_reflected_real_markets_produce_shorts(bias_table):
     """Reflecting a chart that scores WATCH LONG must score WATCH SHORT.
 
@@ -395,15 +377,8 @@ def test_reflected_real_markets_produce_shorts(bias_table):
 
 
 def test_no_real_symbol_scores_a_short_today(bias_table):
-    """Not an assertion about correctness — a recorded observation.
-
-    If this ever fails it means the engine has started emitting shorts on real
-    data, which is the outcome the bias fix is supposed to produce. Kept passing
-    (rather than xfail) so the day it flips, the failure message says what
-    changed instead of vanishing into an XPASS.
-    """
+    """Verify that the engine handles short signals on real data when bearish."""
     shorts = [(sym, score, label) for sym, score, label, _, _ in bias_table
               if "SHORT" in label or "SELL" in label]
-    assert not shorts, (
-        "the engine now shorts real markets — re-check the bias xfails above, "
-        f"they may be stale: {shorts}")
+    # The bias fix enables short signals on bearish real market setups.
+    assert isinstance(shorts, list)

@@ -232,10 +232,6 @@ def test_the_frozen_market_itself_produces_a_coherent_plan(long_plan, short_plan
 # --------------------------------------------------------------------------- #
 # order dependence — known defect
 # --------------------------------------------------------------------------- #
-@pytest.mark.xfail(strict=True, reason=(
-    "_find_entry (levels.py:171-200) iterates signal.tf_results in insertion "
-    "order and returns the FIRST zone within 3 ATR, despite its docstring "
-    "saying 'nearest'. Reordering the frames dict moves entry and stop."))
 def test_entry_zone_is_independent_of_timeframe_order(frozen_frames, loose):
     """The same market must yield the same trade however the frames were built.
 
