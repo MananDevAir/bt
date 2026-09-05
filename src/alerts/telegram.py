@@ -544,7 +544,7 @@ def poll_commands(cfg: Config, conn: Any = None,
                   symbols_status: list[dict] | None = None) -> int:
     """Check for new Telegram commands and respond.
 
-    Uses getUpdates long-polling with a short timeout.
+    Uses getUpdates with offset persisted in bot_state across runs.
     Returns the number of commands processed.
     """
     global _last_update_id
@@ -552,6 +552,17 @@ def poll_commands(cfg: Config, conn: Any = None,
     token, chat_id = _get_credentials()
     if not token:
         return 0
+
+    # Load last update ID from bot_state if available
+    if conn and _last_update_id == 0:
+        try:
+            row = conn.execute(
+                "SELECT value FROM bot_state WHERE key = 'tg_last_update_id'"
+            ).fetchone()
+            if row:
+                _last_update_id = int(row["value"])
+        except Exception:
+            pass
 
     try:
         url = f"{API_BASE.format(token=token)}/getUpdates"
@@ -568,8 +579,12 @@ def poll_commands(cfg: Config, conn: Any = None,
             return 0
 
         processed = 0
+        newest_update_id = _last_update_id
         for update in data.get("result", []):
-            _last_update_id = update["update_id"]
+            uid = update["update_id"]
+            if uid > newest_update_id:
+                newest_update_id = uid
+
             msg = update.get("message", {})
             text = msg.get("text", "")
             msg_chat_id = str(msg.get("chat", {}).get("id", ""))
@@ -586,8 +601,20 @@ def poll_commands(cfg: Config, conn: Any = None,
             if response:
                 send_text(response, token=token, chat_id=chat_id)
                 processed += 1
-                log.info("Command: %s → responded (%d chars)",
+                log.info("Command: %s \u2192 responded (%d chars)",
                          text.split()[0], len(response))
+
+        if newest_update_id > _last_update_id:
+            _last_update_id = newest_update_id
+            if conn:
+                try:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO bot_state (key, value) VALUES ('tg_last_update_id', ?)",
+                        (str(_last_update_id),)
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
 
         return processed
 

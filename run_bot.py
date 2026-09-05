@@ -148,6 +148,14 @@ def main():
         elif args.scan_once:
             cmd_scan_once(cfg, conn, live=args.live)
         elif args.github_actions:
+            # Process any pending Telegram interactive commands
+            try:
+                from src.alerts.telegram import poll_commands
+                poll_commands(cfg, conn)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).debug("Telegram polling skipped: %s", exc)
+
             sleep_cfg = cfg.get("sleep_window", default={}) or {}
             is_sleeping = False
             from datetime import datetime, timezone, timedelta
@@ -164,6 +172,13 @@ def main():
                 logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
             else:
                 cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+
+            # Check if any new commands arrived during the scan
+            try:
+                from src.alerts.telegram import poll_commands
+                poll_commands(cfg, conn)
+            except Exception:
+                pass
 
             # Daily summary at 9 PM IST (21:00)
             if ist_now.hour == 21 and ist_now.minute < 15:
