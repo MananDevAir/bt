@@ -464,6 +464,9 @@ def detect_equal_levels(df: pd.DataFrame, atr_mult: float = 0.1,
                     avg_price, label, len(cluster),
                     cluster[0].ts, cluster[-1].ts))
 
+    # Sort chronologically by the last swing in each pool so `eq[-2:]` in
+    # confluence.py grabs the truly most recent levels, not just the lows.
+    result.sort(key=lambda x: x.last_ts)
     return result
 
 

@@ -334,10 +334,6 @@ def test_a_suppressed_plan_is_never_a_partial_plan(real_plans):
 # --------------------------------------------------------------------------- #
 # the long bias, on real markets
 # --------------------------------------------------------------------------- #
-@pytest.mark.xfail(strict=True, reason=(
-    "structural long bias: all nine cached symbols score positive against their "
-    "own reflection, mean about +3.9 points. Root causes in "
-    "test_symmetry.py::KNOWN_BIASED_VOTES."))
 def test_real_markets_are_not_systematically_long(bias_table):
     """Across a basket of real symbols the reflection bias must average out.
 

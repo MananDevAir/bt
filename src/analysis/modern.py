@@ -49,8 +49,9 @@ def supertrend(df: pd.DataFrame, n: int = 10, mult: float = 3.0) -> pd.DataFrame
         if np.isnan(a[i]):
             continue
         if not started:
-            upper[i], lower[i], direction[i] = up_basic[i], dn_basic[i], 1.0
-            line[i] = lower[i]
+            direction[i] = 1.0 if c[i] >= hl2[i] else -1.0
+            upper[i], lower[i] = up_basic[i], dn_basic[i]
+            line[i] = lower[i] if direction[i] > 0 else upper[i]
             started = True
             continue
         pu, pl = upper[i - 1], lower[i - 1]
