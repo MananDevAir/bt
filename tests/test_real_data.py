@@ -179,7 +179,10 @@ def test_engine_scores_real_data_without_raising(symbol, cfg):
     assert -100.0 <= sig.score <= 100.0
     assert sig.label in {"NEUTRAL", "WATCH LONG", "WATCH SHORT", "BUY", "SELL",
                          "STRONG BUY", "STRONG SELL"}
-    assert 55.0 <= sig.confidence <= 95.0
+    # Confidence floor is 50 for NEUTRAL signals (direction=0 or near-zero score).
+    # 55 was valid when the engine had a structural long bias, but after fixing
+    # equal_levels / supertrend / liq_sweep, some symbols correctly score NEUTRAL.
+    assert 50.0 <= sig.confidence <= 95.0
     for tf, tfr in sig.tf_results.items():
         assert tfr.votes, f"{symbol} {tf} produced no votes on real data"
         for v in tfr.votes:
