@@ -13,6 +13,9 @@ import argparse
 import logging
 import sys
 import os
+import time
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -126,6 +129,8 @@ def main():
                         help="Override dry_run to False (send real Telegram alerts)")
     parser.add_argument("--scan-once", action="store_true",
                         help="Run one scan cycle and exit")
+    parser.add_argument("--continuous", action="store_true",
+                        help="Run 24/7 continuous relay runner (5.5h session, 15m intervals, auto-dispatches next)")
     parser.add_argument("--github-actions", action="store_true",
                         help="Run for GitHub Actions: one scan + outcome check in live mode")
     parser.add_argument("--report", action="store_true",
@@ -147,6 +152,8 @@ def main():
             cmd_report(cfg, conn, live=args.live)
         elif args.scan_once:
             cmd_scan_once(cfg, conn, live=args.live)
+        elif args.continuous:
+            cmd_continuous_relay(cfg, conn)
         elif args.github_actions:
             # Process any pending Telegram interactive commands
             try:
@@ -158,7 +165,6 @@ def main():
 
             sleep_cfg = cfg.get("sleep_window", default={}) or {}
             is_sleeping = False
-            from datetime import datetime, timezone, timedelta
             IST = timezone(timedelta(hours=5, minutes=30))
             ist_now = datetime.now(IST)
             if sleep_cfg.get("enabled", False):
@@ -237,6 +243,164 @@ def main():
             cmd_loop(cfg, conn, live=args.live)
     finally:
         conn.close()
+
+
+def _git_commit_push(db_path):
+    """Commit and push database updates to GitHub repository."""
+    import subprocess
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"], check=False)
+        subprocess.run(["git", "config", "--global", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+        subprocess.run(["git", "add", str(db_path)], check=False)
+        res = subprocess.run(["git", "diff", "--staged", "--quiet"])
+        if res.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "Auto-update database [skip ci]"], check=False)
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+            _log.info("Database state successfully pushed to GitHub.")
+    except Exception as exc:
+        _log.warning("Git push failed: %s", exc)
+
+
+def _trigger_next_relay():
+    """Trigger the next GitHub Actions workflow run via gh CLI or REST API."""
+    import os
+    import subprocess
+    import logging
+    _log = logging.getLogger(__name__)
+    _log.info("Triggering next GitHub Actions relay workflow...")
+    # 1. Try gh CLI
+    try:
+        res = subprocess.run(["gh", "workflow", "run", "bot.yml", "--ref", "main"], capture_output=True, text=True)
+        if res.returncode == 0:
+            _log.info("Successfully dispatched next workflow via gh CLI.")
+            return True
+        else:
+            _log.debug("gh CLI error: %s", res.stderr)
+    except Exception as exc:
+        _log.debug("gh CLI execution failed: %s", exc)
+
+    # 2. Try GitHub REST API
+    try:
+        import requests
+        gh_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        gh_repo = os.environ.get("GITHUB_REPOSITORY", "MananDevAir/bt")
+        if gh_token:
+            url = f"https://api.github.com/repos/{gh_repo}/actions/workflows/bot.yml/dispatches"
+            headers = {
+                "Authorization": f"Bearer {gh_token}",
+                "Accept": "application/vnd.github.v3+json",
+            }
+            resp = requests.post(url, headers=headers, json={"ref": "main"}, timeout=10)
+            if resp.status_code in (204, 201, 200):
+                _log.info("Successfully dispatched next workflow via GitHub API.")
+                return True
+            else:
+                _log.warning("GitHub API dispatch status %d: %s", resp.status_code, resp.text)
+    except Exception as exc:
+        _log.warning("GitHub API dispatch failed: %s", exc)
+    return False
+
+
+def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float = 5.5):
+    """Run 15-minute scans continuously for ~5.5 hours, then trigger the next runner."""
+    import logging
+    _log = logging.getLogger(__name__)
+    start_ts = time.time()
+    max_duration_s = max_hours * 3600
+    cycle = 0
+
+    _log.info("Starting 24/7 continuous relay runner (interval=%dm, max_run=%.1fh)",
+              interval_minutes, max_hours)
+
+    while (time.time() - start_ts) < (max_duration_s - (interval_minutes * 60)):
+        cycle += 1
+        loop_start = time.time()
+        _log.info("=== Starting Relay Cycle #%d (%s UTC) ===",
+                  cycle, datetime.now(timezone.utc).strftime("%H:%M:%S"))
+
+        # 1. Process Telegram commands
+        try:
+            from src.alerts.telegram import poll_commands
+            poll_commands(cfg, conn)
+        except Exception as exc:
+            _log.debug("Telegram polling error: %s", exc)
+
+        # 2. Check Sleep Window (12 AM - 5 AM IST)
+        sleep_cfg = cfg.get("sleep_window", default={}) or {}
+        is_sleeping = False
+        IST = timezone(timedelta(hours=5, minutes=30))
+        ist_now = datetime.now(IST)
+        if sleep_cfg.get("enabled", False):
+            start_h = int(sleep_cfg.get("start_hour_ist", 0))
+            end_h = int(sleep_cfg.get("end_hour_ist", 5))
+            if start_h <= ist_now.hour < end_h:
+                is_sleeping = True
+
+        if is_sleeping:
+            _log.info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
+        else:
+            cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+
+        # 3. Process commands after scan
+        try:
+            from src.alerts.telegram import poll_commands
+            poll_commands(cfg, conn)
+        except Exception:
+            pass
+
+        # 4. Daily summary at 9 PM IST
+        if ist_now.hour == 21 and ist_now.minute < interval_minutes:
+            try:
+                from src.alerts.telegram import send_text
+                today_start_ms = int(datetime(ist_now.year, ist_now.month, ist_now.day, tzinfo=IST).timestamp() * 1000)
+                sig_count = conn.execute("SELECT COUNT(*) FROM signals WHERE ts > ?", (today_start_ms,)).fetchone()[0]
+                open_count = conn.execute("SELECT COUNT(*) FROM signals WHERE status = 'open'").fetchone()[0]
+                won_count = conn.execute("SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'won'", (today_start_ms,)).fetchone()[0]
+                lost_count = conn.execute("SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'lost'", (today_start_ms,)).fetchone()[0]
+                summary_msg = (
+                    f"\U0001f4ca <b>Daily Summary</b>\n"
+                    f"\U0001f4cb Signals today: {sig_count}  |  Open: {open_count}\n"
+                    f"\U0001f7e2 Won: {won_count}  |  \U0001f534 Lost: {lost_count}\n"
+                    f"\u2705 Bot healthy\n"
+                    f"\U0001f552 {ist_now.strftime('%d %b %Y, %I:%M %p IST')}"
+                )
+                send_text(summary_msg)
+            except Exception as exc:
+                _log.warning("Daily summary failed: %s", exc)
+
+        # 5. Daily report at midnight UTC
+        utc_now = datetime.now(timezone.utc)
+        if utc_now.hour == 0 and utc_now.minute < interval_minutes:
+            try:
+                from src.tracking.report import daily_report
+                daily_report(conn, cfg, send=True)
+            except Exception as exc:
+                _log.warning("Daily report failed: %s", exc)
+
+        # 6. DB maintenance & commit/push to Git
+        try:
+            from src.maintenance import cleanup
+            cleanup(conn, cfg.db_path.parent, execute=True)
+        except Exception as exc:
+            _log.debug("Maintenance cleanup error: %s", exc)
+
+        _git_commit_push(cfg.db_path)
+
+        # 7. Sleep until next 15-minute mark
+        elapsed = time.time() - loop_start
+        sleep_sec = max(5, (interval_minutes * 60) - elapsed)
+        _log.info("Cycle #%d completed in %.1fs. Sleeping %.0fs until next scan...",
+                  cycle, elapsed, sleep_sec)
+        time.sleep(sleep_sec)
+
+    # 8. Finished 5.5h session — trigger next relay runner
+    _log.info("Relay session limit reached (%.1f hours). Triggering next relay runner...",
+              (time.time() - start_ts) / 3600)
+    _trigger_next_relay()
+    _log.info("Relay runner handed off successfully. Exiting cleanly.")
 
 
 if __name__ == "__main__":

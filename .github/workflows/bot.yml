@@ -2,20 +2,25 @@ name: Signal Bot 24/7
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Runs every 15 minutes
-  workflow_dispatch:        # Allows manual triggering from the GitHub UI
+    - cron: '0 */6 * * *'  # Safety net restart every 6 hours
+  workflow_dispatch:        # Allows manual trigger or self-dispatching relay
+
+concurrency:
+  group: signal-bot-relay
+  cancel-in-progress: false
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 360    # 6 hours maximum per runner
     permissions:
-      contents: write       # Required to commit the database back
+      contents: write       # Required to commit database back
+      actions: write        # Required to trigger next relay runner
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Fetch full history so we can commit changes properly
           fetch-depth: 0
 
       - name: Set up Python
@@ -29,35 +34,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Bot Cycle
+      - name: Run 24/7 Continuous Relay Runner
         env:
-          # Pass secrets from GitHub Repository Secrets to the environment
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_BACKUP_TOKEN: ${{ secrets.HF_BACKUP_TOKEN }}
           TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # This command runs one scan, checks outcomes, and exits
-          python run_bot.py --github-actions
-
-      - name: Commit and push database
-        run: |
-          # Configure Git
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # Stage the database file
-          git add data/bot.db
-          
-          # Check if there are any changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to the database. Skipping commit."
-          else
-            git commit -m "Auto-update database [skip ci]"
-            # Fetch and rebase remote changes to avoid non-fast-forward push errors
-            git pull --rebase origin main || true
-            # Push using the built-in GITHUB_TOKEN
-            git push
-          fi
+          python run_bot.py --continuous
