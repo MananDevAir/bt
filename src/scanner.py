@@ -88,6 +88,28 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
     now = datetime.now(timezone.utc)
     scan_start = time.time()
 
+    # Apply runtime overrides from Telegram /set commands
+    try:
+        if conn:
+            rows = conn.execute("SELECT key, value FROM bot_state WHERE key LIKE 'cfg_%'").fetchall()
+            mapping = {
+                "cfg_watch": ("thresholds", "watch", int),
+                "cfg_cooldown": ("gates", "cooldown_hours", int),
+                "cfg_min_rr": ("gates", "min_rr", float),
+                "cfg_max_stop_atr": ("gates", "max_stop_atr", float),
+                "cfg_risk_pct": ("risk", "default_risk_pct", float),
+            }
+            for row in rows:
+                k, v = row["key"], row["value"]
+                if k in mapping:
+                    sec, field, cast = mapping[k]
+                    if sec not in cfg.raw or not isinstance(cfg.raw[sec], dict):
+                        cfg.raw[sec] = {}
+                    cfg.raw[sec][field] = cast(v)
+                    log.info("Applied runtime override %s.%s = %s", sec, field, v)
+    except Exception as exc:
+        log.debug("Could not load runtime overrides: %s", exc)
+
     dry_run = cfg.get("dry_run", default=True)
     cooldown_h = int(cfg.get("gates", "cooldown_hours", default=4) or 4)
     cooldown_s = cooldown_h * 3600

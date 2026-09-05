@@ -235,8 +235,150 @@ def handle_command(command: str, cfg: Config,
             "/last  \u2014  Last emitted signal\n"
             "/report  \u2014  Today's performance\n"
             "/watchlist  \u2014  Active symbols\n"
-            "/help  \u2014  This message"
+            "/streak  \u2014  Win/loss streak status\n"
+            "/config  \u2014  Current settings\n"
+            "/set &lt;key&gt; &lt;value&gt;  \u2014  Change a setting\n"
+            "/reset [key|all]  \u2014  Reset overrides to default\n"
+            "/help  \u2014  This message\n"
+            "\n"
+            "<b>Settable keys:</b>\n"
+            "  watch, cooldown, min_rr, max_stop_atr, risk_pct"
         )
+
+    elif cmd == "/streak":
+        if conn is None:
+            return "\U0001f4ca Signal store not available."
+        try:
+            from ..tracking.streaks import get_streak
+            s = get_streak(conn)
+            lines = [
+                "\U0001f4ca <b>Streak Status</b>",
+                f"  Win streak:  {s['win_streak']}",
+                f"  Loss streak: {s['loss_streak']}",
+            ]
+            if s["threshold_bump"] > 0:
+                lines.append(f"  \u26a0\ufe0f Threshold raised by +{s['threshold_bump']} (losing streak)")
+            else:
+                lines.append("  \u2705 No threshold adjustment")
+            return "\n".join(lines)
+        except Exception as exc:
+            log.warning("Error in /streak: %s", exc)
+            return f"\u26a0 Error: {exc}"
+
+    elif cmd == "/config":
+        try:
+            watch = cfg.get("thresholds", "watch", default=18)
+            cooldown = cfg.get("gates", "cooldown_hours", default=4)
+            min_rr = cfg.get("gates", "min_rr", default=1.5)
+            max_stop = cfg.get("gates", "max_stop_atr", default=3.0)
+            risk_pct = cfg.get("risk", "default_risk_pct", default=1.0)
+            dry_run = cfg.get("dry_run", default=True)
+
+            # Check for runtime overrides
+            overrides = []
+            if conn:
+                rows = conn.execute(
+                    "SELECT key, value FROM bot_state WHERE key LIKE 'cfg_%'"
+                ).fetchall()
+                overrides = [(r["key"].replace("cfg_", ""), r["value"]) for r in rows]
+
+            lines = [
+                "\u2699\ufe0f <b>Current Config</b>",
+                f"  Watch threshold: {watch}",
+                f"  Cooldown: {cooldown}h",
+                f"  Min R:R: {min_rr}",
+                f"  Max stop: {max_stop} ATR",
+                f"  Risk per trade: {risk_pct}%",
+                f"  Mode: {'DRY RUN' if dry_run else 'LIVE'}",
+            ]
+            if overrides:
+                lines.append("")
+                lines.append("<b>Runtime Overrides</b>")
+                for k, v in overrides:
+                    lines.append(f"  {k}: {v}")
+            return "\n".join(lines)
+        except Exception as exc:
+            log.warning("Error in /config: %s", exc)
+            return f"\u26a0 Error: {exc}"
+
+    elif cmd == "/set":
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            parts = command.strip().split()
+            if len(parts) < 3:
+                return (
+                    "\u26a0 Usage: /set &lt;key&gt; &lt;value&gt;\n\n"
+                    "<b>Available keys:</b>\n"
+                    "  watch — signal threshold (default 18)\n"
+                    "  cooldown — hours between signals (default 4)\n"
+                    "  min_rr — minimum R:R ratio (default 1.5)\n"
+                    "  max_stop_atr — max stop in ATR (default 3.0)\n"
+                    "  risk_pct — risk per trade % (default 1.0)\n\n"
+                    "<i>To remove an override: /set &lt;key&gt; reset</i>"
+                )
+
+            key = parts[1].lower()
+            value = parts[2]
+
+            allowed = {
+                "watch": ("thresholds", "watch", int, 10, 50),
+                "cooldown": ("gates", "cooldown_hours", int, 1, 24),
+                "min_rr": ("gates", "min_rr", float, 0.5, 5.0),
+                "max_stop_atr": ("gates", "max_stop_atr", float, 1.0, 10.0),
+                "risk_pct": ("risk", "default_risk_pct", float, 0.1, 5.0),
+            }
+
+            if key not in allowed:
+                return f"\u26a0 Unknown key: {key}\nAllowed: {', '.join(allowed.keys())}"
+
+            if value.lower() in ("reset", "default", "none", "clear"):
+                conn.execute("DELETE FROM bot_state WHERE key = ?", (f"cfg_{key}",))
+                conn.commit()
+                return f"\u2705 Reset <b>{key}</b> to default."
+
+            section, cfg_key, cast, min_val, max_val = allowed[key]
+            try:
+                parsed = cast(value)
+            except ValueError:
+                return f"\u26a0 Invalid value: {value} (expected {cast.__name__})"
+
+            if parsed < min_val or parsed > max_val:
+                return f"\u26a0 Value out of range: {min_val} – {max_val}"
+
+            # Store override in bot_state
+            conn.execute(
+                "INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)",
+                (f"cfg_{key}", str(parsed))
+            )
+            conn.commit()
+
+            return (
+                f"\u2705 <b>{key}</b> set to <b>{parsed}</b>\n"
+                f"This override persists across restarts.\n"
+                f"Use /config to see current settings."
+            )
+        except Exception as exc:
+            log.warning("Error in /set: %s", exc)
+            return f"\u26a0 Error: {exc}"
+
+    elif cmd == "/reset":
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            parts = command.strip().split()
+            if len(parts) > 1 and parts[1].lower() not in ("all", "*"):
+                key = parts[1].lower()
+                conn.execute("DELETE FROM bot_state WHERE key = ?", (f"cfg_{key}",))
+                conn.commit()
+                return f"\u2705 Reset <b>{key}</b> to default."
+            else:
+                conn.execute("DELETE FROM bot_state WHERE key LIKE 'cfg_%'")
+                conn.commit()
+                return "\u2705 All runtime overrides cleared. Defaults active."
+        except Exception as exc:
+            log.warning("Error in /reset: %s", exc)
+            return f"\u26a0 Error: {exc}"
 
     return None
 

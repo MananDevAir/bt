@@ -9,8 +9,7 @@
     },
     "htf_conflict": {
       "action": "downgrade",
-      "detail": "HTF bias=bearish opposes signal",
-      "max_label": "WATCH"
+      "detail": "HTF bias=bearish opposes signal"
     }
   },
   "label": "WATCH LONG",
