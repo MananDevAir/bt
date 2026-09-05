@@ -100,7 +100,7 @@ def _fetch_yahoo(ticker: str) -> dict[str, float] | None:
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
     params = {
         "interval": "15m",
-        "range": "1d",
+        "range": "5d",  # 5d ensures weekend queries on forex/stocks still find the last closed candle
     }
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
@@ -111,24 +111,32 @@ def _fetch_yahoo(ticker: str) -> dict[str, float] | None:
         result = data.get("chart", {}).get("result", [])
         if not result:
             return None
+        
         quote = result[0].get("indicators", {}).get("quote", [{}])[0]
         highs = quote.get("high", [])
         lows = quote.get("low", [])
         closes = quote.get("close", [])
-        if not closes:
-            return None
-        # Use the second-to-last candle (most recently closed)
-        idx = -2 if len(closes) >= 2 else -1
-        h = highs[idx] if highs[idx] is not None else closes[idx]
-        l = lows[idx] if lows[idx] is not None else closes[idx]
-        c = closes[idx]
-        if c is None:
-            return None
-        return {
-            "high": float(h),
-            "low": float(l),
-            "close": float(c),
-        }
+
+        # Find the last valid non-None candle
+        valid_indices = [i for i, c in enumerate(closes) if c is not None]
+        if valid_indices:
+            idx = valid_indices[-2] if len(valid_indices) >= 2 else valid_indices[-1]
+            h = highs[idx] if idx < len(highs) and highs[idx] is not None else closes[idx]
+            l = lows[idx] if idx < len(lows) and lows[idx] is not None else closes[idx]
+            c = closes[idx]
+            return {
+                "high": float(h),
+                "low": float(l),
+                "close": float(c),
+            }
+
+        # Fallback to meta market price if candle list is empty
+        meta_price = result[0].get("meta", {}).get("regularMarketPrice")
+        if meta_price is not None:
+            mp = float(meta_price)
+            return {"high": mp, "low": mp, "close": mp}
+
+        return None
     except Exception as exc:
         log.debug("Yahoo fetch failed for %s: %s", ticker, exc)
         return None
