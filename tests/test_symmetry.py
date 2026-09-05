@@ -15,14 +15,12 @@ What this suite found (measured, not inferred):
 * A clear trend is scored symmetrically — the engine *can* short (see
   `test_downtrend_produces_a_short`, which passes). Strong drift washes the bias
   out entirely.
-* A driftless random walk scores +25.6 → `WATCH LONG`, while the same chart
-  reflected scores −16.0 → `NEUTRAL`. The bias is roughly +4.8 points and peaks
-  in exactly the low-drift chop where most bars live. With `thresholds.watch: 18`
-  that is enough to tip sideways markets into LONG and never into SHORT.
-* Four votes fail to flip sign under reflection. `equal_levels` (+0.6) and
-  `fib_ote` (+0.7) are unconditional; `supertrend` (±1.0, the heaviest vote in
-  the engine) and `liq_sweep` are conditional. See `KNOWN_BIASED_VOTES` for the
-  verified cause of each.
+* A driftless random walk previously scored +25.6 → `WATCH LONG`, while the same chart
+  reflected scored −16.0 → `NEUTRAL`. This bias was reduced below the watch threshold
+  after VWAP, rolling VWAP, and chikou-delta votes were wired into the engine — the zero-
+  drift test now passes and its `xfail` marker has been removed.
+* The remaining structural bias lives in `equal_levels`, `fib_ote`, `supertrend`, and
+  `liq_sweep`. See `KNOWN_BIASED_VOTES` for the verified cause of each.
 
 The bias tests are `xfail(strict=True)`: they document known bugs, and the moment
 one is fixed the XPASS fails the suite and forces the marker to be removed.
@@ -170,15 +168,14 @@ def test_flat_market_scores_neutral(neutral_cfg, flat):
 # --------------------------------------------------------------------------- #
 # the long bias — known-failing, documents the bug
 # --------------------------------------------------------------------------- #
-@pytest.mark.xfail(strict=True, reason=(
-    "structural long bias: a zero-drift walk scores +25.6 (WATCH LONG) while "
-    "its reflection scores -16.0 (NEUTRAL). Root causes in KNOWN_BIASED_VOTES."))
 def test_zero_drift_market_is_not_a_signal(neutral_cfg):
     """A market with no drift must not produce a directional signal.
 
-    This is the test that explains the 97-long / 0-short backtest: at
-    `thresholds.watch: 18`, a +4.8 point bias pushes driftless chop over the
-    line into WATCH LONG, while the mirror-image chart stays NEUTRAL.
+    Previously xfail(strict=True): the SuperTrend seed bias and unconnected
+    VWAP/chikou indicators pushed driftless walks over the watch threshold.
+    Wiring session VWAP, rolling VWAP, and chikou-delta into the trend votes
+    reduced the net bias enough that this assertion now passes cleanly.
+    The xfail marker has been removed per the documented rule in this module.
     """
     score, mirrored = _bias(neutral_cfg, 0.0)
     frames = multi_tf(lambda n: trend_path(n, 0.0), bars=320)

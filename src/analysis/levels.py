@@ -382,7 +382,7 @@ def _build_brief_reason(signal: 'SignalResult', direction: int,
             tf_label = "Weekly" if tf == "1w" else "Daily"
             bias = "uptrend" if avg > 0 else "downtrend"
             parts.append(f"{tf_label} {bias}")
-        break  # only the highest available
+            break  # only stop if we found a usable bias
 
     # MTF structure (BOS/CHoCH)
     for tf in ("4h", "1h"):

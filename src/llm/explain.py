@@ -51,7 +51,7 @@ RULES:
 
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODELS = ["groq/compound-mini", "groq/compound", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
+GROQ_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
 
 
 def _get_tokens() -> list[str]:
@@ -185,8 +185,13 @@ def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
     lower = reply.lower()
 
     # Reject preamble or markdown header clutter
-    if "###" in reply or "trade overview" in lower or "here is" in lower or "sure," in lower:
+    if "###" in reply or "trade overview" in lower or "sure," in lower:
         log.warning("LLM reply contains header/preamble clutter, rejecting")
+        return False
+
+    stripped = lower.strip()
+    if stripped.startswith("here is") or stripped.startswith("here's"):
+        log.warning("LLM reply starts with preamble, rejecting")
         return False
 
     direction = facts.get("direction", 0)

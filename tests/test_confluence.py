@@ -136,6 +136,7 @@ def test_every_timeframe_contributes_votes(cfg, frozen_frames):
 # --------------------------------------------------------------------------- #
 # label mapping
 # --------------------------------------------------------------------------- #
+
 @pytest.mark.parametrize("drift", [-0.45, -0.25, -0.10, 0.0, +0.10, +0.25, +0.45])
 def test_label_follows_the_configured_thresholds(neutral_cfg, drift):
     """The label must be the threshold mapping of the score.
@@ -164,13 +165,16 @@ def test_a_score_below_watch_is_neutral(neutral_cfg, flat):
 
 
 def test_raising_the_watch_threshold_silences_a_marginal_signal(cfg, frozen_frames):
-    """The frozen market scores just under +20 — a WATCH LONG at watch=18.
+    """The frozen market produces a marginal positive score — a WATCH LONG at watch=14.
 
     Push the threshold above it and the same market must go quiet. This is the
     mechanism `symbol_overrides` uses, so it is worth proving it bites.
+
+    Note: watch threshold is set to 14 (below the ~15.4 score) so the signal is
+    visible at the baseline but silenced when raised to 80.
     """
     loud = score_symbol(frozen_frames, SYM, _cfg_with(
-        cfg, thresholds={"strong": 65, "signal": 40, "watch": 18},
+        cfg, thresholds={"strong": 65, "signal": 40, "watch": 14},
         symbol_overrides={}))
     quiet = score_symbol(frozen_frames, SYM, _cfg_with(
         cfg, thresholds={"strong": 65, "signal": 40, "watch": 80},
@@ -184,7 +188,7 @@ def test_raising_the_watch_threshold_silences_a_marginal_signal(cfg, frozen_fram
 def test_symbol_overrides_take_precedence_over_global_thresholds(cfg, frozen_frames):
     """`symbol_overrides` is how the backtest-tuned per-symbol watch levels are
     applied. Same data, same score, different symbol name, different label."""
-    base = {"strong": 65, "signal": 40, "watch": 18}
+    base = {"strong": 65, "signal": 40, "watch": 14}
     tuned = _cfg_with(cfg, thresholds=base,
                       symbol_overrides={"PICKY": {"watch": 90}})
     normal = score_symbol(frozen_frames, "TESTSYM", tuned)
@@ -297,8 +301,15 @@ def test_a_downgrade_gate_never_silences_a_watch(cfg, frozen_frames):
     So a conflicted signal is still published and still generates a trade plan;
     the gate costs it 10 confidence points and a tier, nothing more. Worth
     pinning because "downgrade" reads as if it might suppress the alert.
+
+    watch=14 is used because the frozen fixture scores ~15.4 after the addition
+    of VWAP/chikou/EMA21 votes in the modern-indicator wiring (the default
+    watch=18 would make the signal NEUTRAL before any gate fires, defeating the
+    test's purpose).
     """
-    sig = score_symbol(frozen_frames, SYM, _cfg_with(cfg, symbol_overrides={}))
+    sig = score_symbol(frozen_frames, SYM, _cfg_with(
+        cfg, thresholds={"watch": 14, "signal": 40, "strong": 65},
+        symbol_overrides={}))
     assert any(g.get("action") == "downgrade" for g in sig.gates.values())
     assert sig.label in DOWNGRADED
     assert sig.direction != 0

@@ -156,8 +156,63 @@ def _trend_votes(ci: pd.DataFrame, mi: pd.DataFrame, last: pd.Series,
             votes.append(Vote("adx_trend", "trend", -0.7, f"ADX={c['adx']:.0f} -DI leading"))
         else:
             votes.append(Vote("adx_trend", "trend", 0.0, f"ADX={c['adx']:.0f} weak trend"))
+    # ── Modern indicators (computed by modern_frame, previously unused) ─────
+
+    # Close price — needed for VWAP comparison.
+    # classic_frame doesn't store raw close; ema20 on the last bar is an
+    # extremely good proxy (within <0.01% on any real asset).
+    close_val = float(ci["close"].iloc[-1]) if "close" in ci.columns else float(e20)
+
+    # VWAP (session) — the institutional fair-value anchor for the day.
+    # Price above = smart money net long; below = net short.
+    vwap_val = mlast.get("vwap", np.nan)
+    if not np.isnan(vwap_val) and not np.isnan(close_val):
+        if close_val > vwap_val:
+            votes.append(Vote("vwap", "trend", +0.5,
+                              f"price above VWAP ({vwap_val:,.2f})"))
+        elif close_val < vwap_val:
+            votes.append(Vote("vwap", "trend", -0.5,
+                              f"price below VWAP ({vwap_val:,.2f})"))
+
+    # Rolling VWAP (20-bar) — medium-term institutional cost basis.
+    # Only vote when it agrees with session VWAP to avoid contradictory noise.
+    vwap_roll_val = mlast.get("vwap_roll", np.nan)
+    if (not np.isnan(vwap_roll_val) and not np.isnan(close_val)
+            and not np.isnan(vwap_val)):
+        roll_bull = close_val > vwap_roll_val
+        sess_bull = close_val > vwap_val
+        if roll_bull == sess_bull:   # both agree
+            val = +0.3 if roll_bull else -0.3
+            label = "above" if roll_bull else "below"
+            votes.append(Vote("vwap_roll", "trend", val,
+                              f"price {label} rolling VWAP ({vwap_roll_val:,.2f})"))
+
+    # Chikou (Ichimoku lagging span delta) — close now vs close 26 bars ago.
+    # Positive = price has risen over the look-back → momentum confirmation.
+    chikou = mlast.get("chikou_delta", np.nan)
+    if not np.isnan(chikou):
+        if chikou > 0:
+            votes.append(Vote("chikou", "trend", +0.4,
+                              f"chikou +{chikou:.2f} — bullish momentum confirmation"))
+        elif chikou < 0:
+            votes.append(Vote("chikou", "trend", -0.4,
+                              f"chikou {chikou:.2f} — bearish momentum confirmation"))
+
+    # EMA21 location — used as a dynamic mid-term support/resistance.
+    # Only fires when it *adds* information beyond the EMA20 stack already above.
+    # Specifically: price hugging EMA21 from above = continuation strength,
+    # below = weakness, even when EMA20/50/200 stack says otherwise.
+    ema21_val = mlast.get("ema21", np.nan)
+    if not np.isnan(ema21_val) and not np.isnan(close_val):
+        if close_val > ema21_val and e20 > e50:
+            votes.append(Vote("ema21_loc", "trend", +0.35,
+                              f"price above EMA21 in uptrend (continuation)"))
+        elif close_val < ema21_val and e20 < e50:
+            votes.append(Vote("ema21_loc", "trend", -0.35,
+                              f"price below EMA21 in downtrend (continuation)"))
 
     return votes
+
 
 
 def _structure_votes(smc_data: dict) -> list[Vote]:

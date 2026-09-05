@@ -1,5 +1,5 @@
 {
-  "confidence": 55.0,
+  "confidence": 61.2,
   "direction": 1,
   "gate_passed": true,
   "gates": {
@@ -12,40 +12,18 @@
       "detail": "HTF bias=bearish opposes signal"
     }
   },
-  "label": "WATCH LONG",
+  "label": "NEUTRAL",
   "max_possible": 1200.0,
-  "plan": {
-    "brief_reason": "Weekly uptrend + 4h CHOCH bear + market entry",
-    "direction": 1,
-    "entry_high": 23066.74,
-    "entry_low": 22964.71,
-    "entry_mid": 23015.73,
-    "holding_horizon": "hours",
-    "invalidation": "HTF/MTF close below SL (22,796.37)",
-    "risk_atr": 1.07,
-    "risk_pct": 0.95,
-    "rr": 2.0,
-    "sl": 22796.37,
-    "source": "market",
-    "tp1": 23235.08,
-    "tp2": 23454.43,
-    "tp3": 23673.79,
-    "tp_allocation": [
-      50,
-      30,
-      20
-    ],
-    "trade_type": "Swing"
-  },
-  "raw_score": 231.61619,
-  "score": 19.3,
+  "plan": null,
+  "raw_score": 184.76619,
+  "score": 15.4,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
       "regime": "normal",
       "structure_bias": "bearish",
-      "vote_count": 25,
-      "vote_sum": 3.66,
+      "vote_count": 29,
+      "vote_sum": 5.21,
       "votes": [
         {
           "category": "momentum",
@@ -115,6 +93,18 @@
         },
         {
           "category": "trend",
+          "detail": "chikou +67.20 \u2014 bullish momentum confirmation",
+          "name": "chikou",
+          "value": 0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price above EMA21 in uptrend (continuation)",
+          "name": "ema21_loc",
+          "value": 0.35
+        },
+        {
+          "category": "trend",
           "detail": "EMA 20>50>200 aligned bull",
           "name": "ema_stack",
           "value": 1.0
@@ -142,6 +132,18 @@
           "detail": "tenkan > kijun",
           "name": "tk_cross",
           "value": 0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price above VWAP (22,719.84)",
+          "name": "vwap",
+          "value": 0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price above rolling VWAP (22,941.26)",
+          "name": "vwap_roll",
+          "value": 0.3
         },
         {
           "category": "volume",
@@ -202,8 +204,8 @@
     "1d": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 22,
-      "vote_sum": -2.6,
+      "vote_count": 25,
+      "vote_sum": -3.85,
       "votes": [
         {
           "category": "momentum",
@@ -261,6 +263,18 @@
         },
         {
           "category": "trend",
+          "detail": "chikou -183.63 \u2014 bearish momentum confirmation",
+          "name": "chikou",
+          "value": -0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price below EMA21 in downtrend (continuation)",
+          "name": "ema21_loc",
+          "value": -0.35
+        },
+        {
+          "category": "trend",
           "detail": "price above EMA200",
           "name": "ema_stack",
           "value": 0.4
@@ -287,6 +301,12 @@
           "category": "trend",
           "detail": "tenkan < kijun",
           "name": "tk_cross",
+          "value": -0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price below VWAP (22,784.73)",
+          "name": "vwap",
           "value": -0.5
         },
         {
@@ -342,8 +362,8 @@
     "1h": {
       "regime": "expanding",
       "structure_bias": "bullish",
-      "vote_count": 23,
-      "vote_sum": 5.1,
+      "vote_count": 27,
+      "vote_sum": 6.65,
       "votes": [
         {
           "category": "momentum",
@@ -401,6 +421,18 @@
         },
         {
           "category": "trend",
+          "detail": "chikou +528.39 \u2014 bullish momentum confirmation",
+          "name": "chikou",
+          "value": 0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price above EMA21 in uptrend (continuation)",
+          "name": "ema21_loc",
+          "value": 0.35
+        },
+        {
+          "category": "trend",
           "detail": "EMA 20>50>200 aligned bull",
           "name": "ema_stack",
           "value": 1.0
@@ -428,6 +460,18 @@
           "detail": "tenkan > kijun",
           "name": "tk_cross",
           "value": 0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price above VWAP (22,722.52)",
+          "name": "vwap",
+          "value": 0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price above rolling VWAP (22,777.05)",
+          "name": "vwap_roll",
+          "value": 0.3
         },
         {
           "category": "volume",
@@ -488,8 +532,8 @@
     "1w": {
       "regime": "quiet",
       "structure_bias": "bullish",
-      "vote_count": 22,
-      "vote_sum": 7.5,
+      "vote_count": 25,
+      "vote_sum": 7.75,
       "votes": [
         {
           "category": "momentum",
@@ -547,6 +591,18 @@
         },
         {
           "category": "trend",
+          "detail": "chikou +3061.85 \u2014 bullish momentum confirmation",
+          "name": "chikou",
+          "value": 0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price above EMA21 in uptrend (continuation)",
+          "name": "ema21_loc",
+          "value": 0.35
+        },
+        {
+          "category": "trend",
           "detail": "EMA 20>50>200 aligned bull",
           "name": "ema_stack",
           "value": 1.0
@@ -574,6 +630,12 @@
           "detail": "tenkan > kijun",
           "name": "tk_cross",
           "value": 0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price below VWAP (22,749.13)",
+          "name": "vwap",
+          "value": -0.5
         },
         {
           "category": "volume",
@@ -628,8 +690,8 @@
     "4h": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 24,
-      "vote_sum": 2.08,
+      "vote_count": 27,
+      "vote_sum": 2.33,
       "votes": [
         {
           "category": "momentum",
@@ -693,6 +755,18 @@
         },
         {
           "category": "trend",
+          "detail": "chikou +550.17 \u2014 bullish momentum confirmation",
+          "name": "chikou",
+          "value": 0.4
+        },
+        {
+          "category": "trend",
+          "detail": "price above EMA21 in uptrend (continuation)",
+          "name": "ema21_loc",
+          "value": 0.35
+        },
+        {
+          "category": "trend",
           "detail": "price above EMA200",
           "name": "ema_stack",
           "value": 0.4
@@ -720,6 +794,12 @@
           "detail": "tenkan > kijun",
           "name": "tk_cross",
           "value": 0.5
+        },
+        {
+          "category": "trend",
+          "detail": "price below VWAP (22,732.30)",
+          "name": "vwap",
+          "value": -0.5
         },
         {
           "category": "volume",

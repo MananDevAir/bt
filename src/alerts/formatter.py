@@ -49,8 +49,8 @@ def _format_narration_html(text: str) -> str:
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"\*(.+?)\*", r"<i>\1</i>", escaped)
 
-    # 4. Normalize bullets (convert -, *, + at line starts to •)
-    escaped = re.sub(r"(?m)^[\s*+-]+\s+", "• ", escaped)
+    # 4. Normalize bullets (convert -, +, • at line starts to •)
+    escaped = re.sub(r"(?m)^[\s\-\+]+\s+", "• ", escaped)
 
     # 5. Clean up any leftover stray # characters
     escaped = escaped.replace("#", "")
@@ -189,7 +189,13 @@ def format_signal(signal: Any, plan: Any | None,
         lines.append("")
 
     # ── Footer ──────────────────────────────────────
-    lines.append(f"\U0001f552 {_ist_now()}")
+    source_badge = ""
+    if narration_source:
+        if narration_source.startswith("hf:") or narration_source.startswith("groq:"):
+            source_badge = " \u2022 <i>AI</i>"
+        elif narration_source == "template":
+            source_badge = " \u2022 <i>Rules</i>"
+    lines.append(f"\U0001f552 {_ist_now()}{source_badge}")
     lines.append("<i>Analysis only \u2014 not financial advice.</i>")
 
     return "\n".join(lines)
