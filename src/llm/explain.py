@@ -44,13 +44,17 @@ STRICT RULES:
 """
 
 
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODELS = ["groq/compound-mini", "groq/compound", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
+
+
 def _get_tokens() -> list[str]:
     """Collect all available HF tokens from environment."""
     tokens: list[str] = []
     primary = os.environ.get("HF_TOKEN", "").strip()
     if primary:
         tokens.append(primary)
-    fallback = os.environ.get("HF_TOKEN_FALLBACK", "").strip()
+    fallback = os.environ.get("HF_TOKEN_FALLBACK", "").strip() or os.environ.get("HF_BACKUP_TOKEN", "").strip()
     if fallback and fallback != primary:
         tokens.append(fallback)
     return tokens
@@ -65,6 +69,36 @@ def _get_models(cfg: Config) -> list[str]:
     if fallback and fallback != primary:
         models.append(fallback)
     return models
+
+
+def _call_groq(api_key: str, model: str, prompt: str,
+               timeout: int = 8, max_tokens: int = 512) -> str | None:
+    """Make an ultra-fast (<0.4s) Groq API call."""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+    }
+    try:
+        resp = requests.post(GROQ_URL, headers=headers, json=body, timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return content.strip() if content else None
+        else:
+            log.debug("Groq %d (model=%s): %s", resp.status_code, model, resp.text[:120])
+            return None
+    except Exception as exc:
+        log.debug("Groq call failed (model=%s): %s", model, exc)
+        return None
 
 
 def _call_hf(token: str, model: str, prompt: str,
@@ -239,16 +273,25 @@ def explain(signal: Any, plan: Any | None, cfg: Config) -> tuple[str, str]:
     prompt = _build_user_prompt(facts)
     timeout = int(llm_cfg.get("timeout_s", 12))
 
-    # Get all tokens and models
+    # 1. Try Groq if GROQ_API_KEY is available (sub-second ultra-fast inference)
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip() or (Config.secret("GROQ_API_KEY") or "").strip()
+    if groq_key:
+        for g_model in GROQ_MODELS:
+            log.debug("Trying Groq: model=%s", g_model)
+            reply = _call_groq(groq_key, g_model, prompt, timeout=min(8, timeout))
+            if reply and _validate_reply(reply, facts):
+                _daily_state["count"] += 1
+                _cache[key] = (reply, now)
+                source = f"groq:{g_model}"
+                log.info("Narration from %s (%d tokens)", source, len(reply.split()))
+                return reply, source
+            elif reply:
+                log.warning("Groq reply rejected by validation (model=%s)", g_model)
+
+    # 2. Try Hugging Face if HF tokens are available
     tokens = _get_tokens()
     models = _get_models(cfg)
 
-    if not tokens:
-        log.info("No HF tokens configured, using template")
-        text = template_narrate(facts)
-        return text, "template"
-
-    # Try each token × model combination
     for token in tokens:
         masked = token[:8] + "..." + token[-4:]
         for model in models:
@@ -263,8 +306,8 @@ def explain(signal: Any, plan: Any | None, cfg: Config) -> tuple[str, str]:
             elif reply:
                 log.warning("HF reply rejected by validation (model=%s)", model)
 
-    # All HF attempts failed → deterministic template
-    log.info("All HF attempts failed, using template fallback")
+    # 3. All LLM attempts failed → deterministic template
+    log.info("All LLM attempts failed, using template fallback")
     text = template_narrate(facts)
     _cache[key] = (text, now)
     return text, "template"

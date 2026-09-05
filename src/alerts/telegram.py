@@ -160,6 +160,24 @@ def send_signal(signal: Any, plan: Any | None,
         return False
 
 
+def _resolve_symbol_alias(raw_sym: str, cfg: Config) -> Any | None:
+    """Map common ticker variations to standard configured symbol."""
+    cleaned = raw_sym.strip().upper().replace("/", "").replace("-", "").replace("_", "")
+    aliases = {
+        "BTCUSDT": "BTC", "BTCUSD": "BTC", "BITCOIN": "BTC", "XBT": "BTC",
+        "ETHUSDT": "ETH", "ETHUSD": "ETH", "ETHEREUM": "ETH",
+        "GOLD": "XAUUSDT", "XAU": "XAUUSDT", "XAUUSD": "XAUUSDT", "PAXG": "XAUUSDT", "XAUT": "XAUUSDT",
+        "NASDAQ": "US100", "NDX": "US100", "NAS100": "US100", "QQQ": "US100", "USTEC": "US100",
+        "SPX": "US500", "SP500": "US500", "SPY": "US500", "US500": "US500", "SPX500": "US500",
+        "DOW": "US30", "DJI": "US30", "DIA": "US30", "DOW30": "US30", "DJ30": "US30", "WS30": "US30",
+        "EUR": "EURUSD", "EUR/USD": "EURUSD", "EURO": "EURUSD",
+        "GBP": "GBPUSD", "GBP/USD": "GBPUSD", "CABLE": "GBPUSD", "POUND": "GBPUSD",
+        "JPY": "USDJPY", "USD/JPY": "USDJPY", "YEN": "USDJPY",
+    }
+    target = aliases.get(cleaned, cleaned)
+    return next((s for s in cfg.symbols if s.name.upper() == target), None)
+
+
 def handle_command(command: str, cfg: Config,
                    conn: Any = None,
                    symbols_status: list[dict] | None = None) -> str | None:
@@ -174,7 +192,13 @@ def handle_command(command: str, cfg: Config,
     """
     cmd = command.strip().lower().split()[0] if command.strip() else ""
 
-    if cmd == "/status":
+    if cmd in ("/ping", "/health"):
+        from datetime import datetime, timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        return f"\U0001f3d3 <b>Pong!</b>\n\u2705 Bot active, 24/7 runner healthy\n\U0001f552 {now_ist}"
+
+    elif cmd == "/status":
         if symbols_status:
             return format_status(symbols_status)
         return "\U0001f4ca No scan data available yet. Wait for next scan cycle."
@@ -231,8 +255,9 @@ def handle_command(command: str, cfg: Config,
     elif cmd == "/help":
         return (
             "<b>Signal Bot Commands</b>\n"
+            "/ping  \u2014  Instant bot heartbeat & latency check\n"
             "/status  \u2014  Current market scores\n"
-            "/check &lt;sym&gt;  \u2014  Live real-time scan on demand\n"
+            "/check &lt;sym&gt;  \u2014  Live real-time scan on demand (e.g. /check BTC, /check GOLD, /check NASDAQ)\n"
             "/levels &lt;sym&gt;  \u2014  Live support, resistance & OBs\n"
             "/last  \u2014  Last emitted signal\n"
             "/report  \u2014  Today's performance\n"
@@ -257,12 +282,12 @@ def handle_command(command: str, cfg: Config,
             parts = command.strip().split()
             if len(parts) < 2:
                 symbols_str = ", ".join(s.name for s in cfg.symbols)
-                return f"\u26a0 Usage: /check &lt;symbol&gt;\nAvailable: {symbols_str}"
+                return f"\u26a0 Usage: /check &lt;symbol&gt;\nAvailable: {symbols_str}\n(Aliases accepted: GOLD, NASDAQ, SPX, DOW, BTCUSDT, etc.)"
 
-            sym_name = parts[1].upper()
-            sym = next((s for s in cfg.symbols if s.name.upper() == sym_name), None)
+            raw_input = parts[1]
+            sym = _resolve_symbol_alias(raw_input, cfg)
             if not sym:
-                return f"\u26a0 Unknown symbol: {sym_name}\nAvailable: {', '.join(s.name for s in cfg.symbols)}"
+                return f"\u26a0 Unknown symbol: {raw_input}\nAvailable: {', '.join(s.name for s in cfg.symbols)}"
 
             from datetime import datetime, timezone
             from ..data.budget import Budget
@@ -346,10 +371,11 @@ def handle_command(command: str, cfg: Config,
                 symbols_str = ", ".join(s.name for s in cfg.symbols)
                 return f"\u26a0 Usage: /levels &lt;symbol&gt;\nAvailable: {symbols_str}"
 
-            sym = parts[1].upper()
-            valid_names = [s.name.upper() for s in cfg.symbols]
-            if sym not in valid_names:
-                return f"\u26a0 Unknown symbol: {sym}\nAvailable: {', '.join(valid_names)}"
+            raw_sym = parts[1]
+            sym_obj = _resolve_symbol_alias(raw_sym, cfg)
+            if not sym_obj:
+                return f"\u26a0 Unknown symbol: {raw_sym}\nAvailable: {', '.join(s.name for s in cfg.symbols)}"
+            sym = sym_obj.name
 
             from ..data.live_price import get_live_price
             live = get_live_price(sym)
@@ -361,8 +387,9 @@ def handle_command(command: str, cfg: Config,
             ).fetchall()
 
             lines = [f"\U0001f4ca <b>Technical Levels: {sym}</b>"]
-            if live and live.get("price"):
-                lines.append(f"  Live Price: <b>${live['price']:,.2f}</b> (via {live.get('source', 'api')})")
+            if live and live.get("close"):
+                src_str = f" (via {live.get('source', 'api')})" if live.get("source") else ""
+                lines.append(f"  Live Price: <b>${live['close']:,.2f}</b>{src_str}")
 
             if rows and len(rows) >= 20:
                 df = pd.DataFrame([dict(r) for r in rows])
@@ -417,7 +444,9 @@ def handle_command(command: str, cfg: Config,
             if len(parts) < 2:
                 return "\u26a0 Usage: /mute &lt;symbol&gt; [hours=4]\nExample: /mute XAUUSDT 8"
 
-            sym = parts[1].upper()
+            raw_sym = parts[1]
+            sym_obj = _resolve_symbol_alias(raw_sym, cfg)
+            sym = sym_obj.name if sym_obj else raw_sym.upper()
             hours = int(parts[2]) if len(parts) > 2 else 4
             now_ms = int(time.time() * 1000)
             until_ms = now_ms + hours * 3600 * 1000
@@ -448,7 +477,9 @@ def handle_command(command: str, cfg: Config,
             parts = command.strip().split()
             if len(parts) < 2:
                 return "\u26a0 Usage: /unmute &lt;symbol&gt;\nExample: /unmute BTC"
-            sym = parts[1].upper()
+            raw_sym = parts[1]
+            sym_obj = _resolve_symbol_alias(raw_sym, cfg)
+            sym = sym_obj.name if sym_obj else raw_sym.upper()
             conn.execute("DELETE FROM mutes WHERE symbol = ?", (sym,))
             conn.commit()
             return f"\U0001f50a <b>{sym}</b> unmuted. Signals active."

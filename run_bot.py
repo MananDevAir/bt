@@ -121,9 +121,10 @@ def cmd_status(cfg, conn):
 
 
 def _git_commit_push(db_path):
-    """Commit and push database updates to GitHub repository."""
+    """Commit and push database updates to GitHub repository with retry backoff."""
     import subprocess
     import logging
+    import time
     _log = logging.getLogger(__name__)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"], check=False)
@@ -132,11 +133,22 @@ def _git_commit_push(db_path):
         res = subprocess.run(["git", "diff", "--staged", "--quiet"])
         if res.returncode != 0:
             subprocess.run(["git", "commit", "-m", "Auto-update database [skip ci]"], check=False)
-            subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
-            _log.info("Database state successfully pushed to GitHub.")
+            
+            pushed = False
+            for attempt in range(3):
+                subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=False)
+                push_res = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+                if push_res.returncode == 0:
+                    _log.info("Database state successfully pushed to GitHub.")
+                    pushed = True
+                    break
+                else:
+                    _log.debug("Git push attempt %d failed: %s", attempt + 1, push_res.stderr)
+                    time.sleep(2 * (attempt + 1))
+            if not pushed:
+                _log.warning("Git push failed after 3 attempts.")
     except Exception as exc:
-        _log.warning("Git push failed: %s", exc)
+        _log.warning("Git commit/push error: %s", exc)
 
 
 def _trigger_next_relay():
