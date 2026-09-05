@@ -65,3 +65,30 @@ def describe(session: str, now: datetime | None = None) -> str:
     if session == "always":
         return "24/7"
     return "OPEN" if is_open(session, now) else "closed"
+
+
+def get_active_killzone(now: datetime | None = None) -> str | None:
+    """Check if current time is within high-probability ICT/liquidity killzones."""
+    dt = _now_utc(now)
+    if dt.weekday() > 4:  # Weekend
+        return None
+    t = dt.time()
+    if time(7, 0) <= t < time(10, 30):
+        return "London Open"
+    if time(12, 30) <= t < time(17, 0):
+        return "New York Open"
+    if time(19, 0) <= t < time(21, 0):
+        return "London Close"
+    return None
+
+
+def get_market_session(now: datetime | None = None) -> str:
+    """Return the active global session name."""
+    t = _now_utc(now).time()
+    if time(0, 0) <= t < time(7, 0):
+        return "Asian Session"
+    if time(7, 0) <= t < time(12, 30):
+        return "London Session"
+    if time(12, 30) <= t < time(21, 0):
+        return "New York Session"
+    return "Pacific Session"

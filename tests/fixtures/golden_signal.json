@@ -37,15 +37,15 @@
     ],
     "trade_type": "Swing"
   },
-  "raw_score": 237.37619,
-  "score": 19.8,
+  "raw_score": 225.37619,
+  "score": 18.8,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
       "regime": "normal",
       "structure_bias": "bearish",
       "vote_count": 25,
-      "vote_sum": 4.7,
+      "vote_sum": 3.3,
       "votes": [
         {
           "category": "momentum",
@@ -157,9 +157,9 @@
         },
         {
           "category": "zones",
-          "detail": "price in fib OTE (0.618 @ 22,981)",
+          "detail": "price in bear fib OTE (0.618 @ 22,981)",
           "name": "fib_ote",
-          "value": 0.7
+          "value": -0.7
         },
         {
           "category": "zones",
@@ -343,7 +343,7 @@
       "regime": "expanding",
       "structure_bias": "bullish",
       "vote_count": 23,
-      "vote_sum": 6.5,
+      "vote_sum": 5.1,
       "votes": [
         {
           "category": "momentum",
@@ -443,9 +443,9 @@
         },
         {
           "category": "zones",
-          "detail": "price in fib OTE (0.618 @ 22,926)",
+          "detail": "price in bear fib OTE (0.618 @ 22,926)",
           "name": "fib_ote",
-          "value": 0.7
+          "value": -0.7
         },
         {
           "category": "zones",
@@ -629,7 +629,7 @@
       "regime": "expanding",
       "structure_bias": "bearish",
       "vote_count": 24,
-      "vote_sum": 3.0,
+      "vote_sum": 1.6,
       "votes": [
         {
           "category": "momentum",
@@ -735,9 +735,9 @@
         },
         {
           "category": "zones",
-          "detail": "price in fib OTE (0.618 @ 22,736)",
+          "detail": "price in bear fib OTE (0.618 @ 22,736)",
           "name": "fib_ote",
-          "value": 0.7
+          "value": -0.7
         },
         {
           "category": "zones",

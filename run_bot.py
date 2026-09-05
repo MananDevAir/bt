@@ -209,6 +209,15 @@ def main():
                 except Exception as exc:
                     import logging
                     logging.getLogger(__name__).warning("Daily report failed: %s", exc)
+
+            # Lightweight DB maintenance (checkpoint WAL, expire old mutes)
+            try:
+                from src.maintenance import cleanup
+                data_dir = cfg.db_path.parent
+                cleanup(conn, data_dir, execute=True)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).debug("Maintenance cleanup skipped: %s", exc)
         else:
             cmd_loop(cfg, conn, live=args.live)
     finally:

@@ -166,10 +166,28 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         sl_hit_short = direction < 0 and high >= sl
         
         if sl_hit_long or sl_hit_short:
-            # Check if TP1 was already hit — if so, this is a partial win at breakeven
+            # Check if TP2 or TP1 was already hit
+            tp2_was_hit = outcome.get("tp2_hit_ts") if outcome else None
             tp1_was_hit = outcome.get("tp1_hit_ts") if outcome else None
-            
-            if tp1_was_hit:
+
+            if tp2_was_hit:
+                # TP2 was hit, SL was trailed to TP1 — this is a solid win
+                sig_store.update_status(conn, signal_id, "won")
+                _update_outcome(conn, signal_id, "sl_after_tp2", now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price,
+                                sl_hit_ts=now_ms)
+                if data_dir:
+                    log_outcome(data_dir, signal_id, symbol, "won",
+                                hit="sl_after_tp2", mfe_r=new_mfe, mae_r=new_mae)
+                summary["won"] += 1
+                update_streak(conn, "won")
+                hit_alerts.append(
+                    f"\U0001f7e2 <b>{symbol} TRAILED SL HIT (TP1 level)</b>\n"
+                    f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
+                    f"  Signal #{signal_id} closed as <b>WIN</b> (80% profit locked)"
+                )
+                log.info("Signal #%d SL hit at TP1 level after TP2 (%s)", signal_id, symbol)
+            elif tp1_was_hit:
                 # TP1 was hit, SL moved to breakeven — this is a partial win
                 sig_store.update_status(conn, signal_id, "won")
                 _update_outcome(conn, signal_id, "sl_after_tp1", now_ms,
@@ -250,23 +268,26 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                 continue
 
             elif tp_hit == "tp2" and not tp2_already:
-                # TP2 hit for the first time — alert but keep tracking for TP3
-                # SL is already at breakeven from TP1 hit
+                # TP2 hit for the first time — trail SL to TP1 level and keep tracking for TP3
+                if tp1:
+                    conn.execute(
+                        "UPDATE signals SET sl = ? WHERE id = ?",
+                        (tp1, signal_id)
+                    )
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
                 hit_alerts.append(
                     f"\U0001f7e2 <b>{symbol} TP2 HIT \u2014 +{r_mult}R</b>\n"
-                    f"  Price: {price:,.2f}  |  Holding 20% for TP3\n"
-                    f"  Signal #{signal_id} still <b>OPEN</b>"
+                    f"  Price: {price:,.2f}  |  SL \u2192 TP1 level ({tp1:,.2f})\n"
+                    f"  Holding 20% for TP3 (80% banked) \u2705"
                 )
-                log.info("Signal #%d TP2 hit at %.2f (%s) \u2014 partial win, tracking TP3",
+                log.info("Signal #%d TP2 hit at %.2f (%s) \u2014 SL trailed to TP1, tracking TP3",
                          signal_id, price, symbol)
                 summary["still_open"] += 1
                 continue
 
             elif tp_hit == "tp1" and not tp1_already:
                 # TP1 hit for the first time — move SL to breakeven
-                # Update the signal's SL to entry_mid (breakeven)
                 conn.execute(
                     "UPDATE signals SET sl = ? WHERE id = ?",
                     (entry_mid, signal_id)

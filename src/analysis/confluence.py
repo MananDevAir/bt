@@ -297,8 +297,10 @@ def _zone_votes(pa_data: dict, smc_data: dict, close: float,
         if fib.kind == "retracement" and 0.600 <= fib.ratio <= 0.720:
             dist = abs(close - fib.price) / atr_val
             if dist < 1.0:
-                votes.append(Vote("fib_ote", "zones", +0.7,
-                                  f"price in fib OTE ({fib.ratio:.3f} @ {fib.price:,.0f})"))
+                fib_dir = getattr(fib, "direction", 1)
+                bias_val = 0.7 * fib_dir
+                votes.append(Vote("fib_ote", "zones", bias_val,
+                                  f"price in {'bull' if fib_dir > 0 else 'bear'} fib OTE ({fib.ratio:.3f} @ {fib.price:,.0f})"))
                 break
 
     # Liquidity sweeps — recent sweep is a reversal hint

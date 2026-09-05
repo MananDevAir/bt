@@ -79,6 +79,16 @@ def format_signal(signal: Any, plan: Any | None,
         lines.append(f"{te} <b>Type: {plan.trade_type}</b>  \u2014  {desc}")
     lines.append("")
 
+    # ── Session / Killzone ──────────────────────────
+    if plan and (getattr(plan, "session", "") or getattr(plan, "killzone", "")):
+        kz = getattr(plan, "killzone", "")
+        sess = getattr(plan, "session", "")
+        if kz:
+            lines.append(f"\u26a1 <b>Session:</b> {sess} ({kz} Killzone)")
+        elif sess:
+            lines.append(f"\U0001f310 <b>Session:</b> {sess}")
+        lines.append("")
+
     # ── Brief reason (WHY this signal) ──────────────
     if plan and plan.brief_reason:
         lines.append(f"\U0001f50d {plan.brief_reason}")

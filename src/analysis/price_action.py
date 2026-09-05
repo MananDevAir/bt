@@ -232,6 +232,7 @@ class FibLevel:
     ratio: float
     price: float
     kind: str           # retracement, extension
+    direction: int = 1  # +1 upswing (bullish retracement), -1 downswing (bearish retracement)
 
 
 def fibonacci_retracement(swing_lo: float, swing_hi: float,
@@ -251,14 +252,14 @@ def fibonacci_retracement(swing_lo: float, swing_hi: float,
             price = swing_hi - r * span   # pull-back from top
         else:
             price = swing_lo + r * span   # pull-back from bottom
-        levels.append(FibLevel(r, price, "retracement"))
+        levels.append(FibLevel(r, price, "retracement", direction=direction))
 
     for r in FIB_EXT_LEVELS:
         if direction > 0:
             price = swing_hi - r * span   # extend above top
         else:
             price = swing_lo + r * span   # extend below bottom
-        levels.append(FibLevel(r, price, "extension"))
+        levels.append(FibLevel(r, price, "extension", direction=direction))
 
     return levels
 

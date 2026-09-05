@@ -237,6 +237,10 @@ def handle_command(command: str, cfg: Config,
             "/watchlist  \u2014  Active symbols\n"
             "/streak  \u2014  Win/loss streak status\n"
             "/config  \u2014  Current settings\n"
+            "/levels &lt;sym&gt;  \u2014  Live support, resistance & OBs\n"
+            "/mute &lt;sym&gt; [h]  \u2014  Temporarily mute an asset\n"
+            "/unmute &lt;sym&gt;  \u2014  Unmute an asset\n"
+            "/mutes  \u2014  List muted assets\n"
             "/set &lt;key&gt; &lt;value&gt;  \u2014  Change a setting\n"
             "/reset [key|all]  \u2014  Reset overrides to default\n"
             "/help  \u2014  This message\n"
@@ -263,6 +267,155 @@ def handle_command(command: str, cfg: Config,
             return "\n".join(lines)
         except Exception as exc:
             log.warning("Error in /streak: %s", exc)
+            return f"\u26a0 Error: {exc}"
+
+    elif cmd == "/levels":
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            parts = command.strip().split()
+            if len(parts) < 2:
+                symbols_str = ", ".join(s.name for s in cfg.symbols)
+                return f"\u26a0 Usage: /levels &lt;symbol&gt;\nAvailable: {symbols_str}"
+
+            sym = parts[1].upper()
+            valid_names = [s.name.upper() for s in cfg.symbols]
+            if sym not in valid_names:
+                return f"\u26a0 Unknown symbol: {sym}\nAvailable: {', '.join(valid_names)}"
+
+            from ..data.live_price import get_live_price
+            live = get_live_price(sym)
+
+            import pandas as pd
+            rows = conn.execute(
+                "SELECT ts, open, high, low, close, volume FROM candles WHERE symbol = ? ORDER BY ts ASC",
+                (sym,)
+            ).fetchall()
+
+            lines = [f"\U0001f4ca <b>Technical Levels: {sym}</b>"]
+            if live and live.get("price"):
+                lines.append(f"  Live Price: <b>${live['price']:,.2f}</b> (via {live.get('source', 'api')})")
+
+            if rows and len(rows) >= 20:
+                df = pd.DataFrame([dict(r) for r in rows])
+                df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+                df.set_index("ts", inplace=True)
+
+                from ..analysis.indicators import atr as calc_atr
+                from ..analysis.price_action import support_resistance
+                from ..analysis.smc import detect_order_blocks
+
+                atr_s = calc_atr(df["high"], df["low"], df["close"], 14)
+                atr_val = float(atr_s.iloc[-1]) if not atr_s.empty else 0
+                if atr_val > 0:
+                    lines.append(f"  ATR: {atr_val:,.2f}")
+
+                sr_zones = support_resistance(df)
+                sup = [z for z in sr_zones if z.kind == "support"][:2]
+                res = [z for z in sr_zones if z.kind == "resistance"][:2]
+
+                if sup:
+                    lines.append("")
+                    lines.append("\U0001f6e1\ufe0f <b>Key Support:</b>")
+                    for s in sup:
+                        lines.append(f"  \u2022 {s.lo:,.2f} \u2013 {s.hi:,.2f} ({s.touches} touches)")
+                if res:
+                    lines.append("")
+                    lines.append("\u2694\ufe0f <b>Key Resistance:</b>")
+                    for r in res:
+                        lines.append(f"  \u2022 {r.lo:,.2f} \u2013 {r.hi:,.2f} ({r.touches} touches)")
+
+                obs = detect_order_blocks(df, atr_series=atr_s)
+                unmit = [ob for ob in obs if not ob.mitigated][-2:]
+                if unmit:
+                    lines.append("")
+                    lines.append("\U0001f9f1 <b>Recent Order Blocks:</b>")
+                    for ob in unmit:
+                        k_str = "\U0001f7e2 Bullish" if ob.direction > 0 else "\U0001f534 Bearish"
+                        lines.append(f"  \u2022 {k_str} OB: {ob.lo:,.2f} \u2013 {ob.hi:,.2f}")
+            else:
+                lines.append("\n<i>No cached candles yet. Scan cycle will populate levels.</i>")
+
+            return "\n".join(lines)
+        except Exception as exc:
+            log.warning("Error in /levels: %s", exc)
+            return f"\u26a0 Error generating levels: {exc}"
+
+    elif cmd == "/mute":
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            parts = command.strip().split()
+            if len(parts) < 2:
+                return "\u26a0 Usage: /mute &lt;symbol&gt; [hours=4]\nExample: /mute XAUUSDT 8"
+
+            sym = parts[1].upper()
+            hours = int(parts[2]) if len(parts) > 2 else 4
+            now_ms = int(time.time() * 1000)
+            until_ms = now_ms + hours * 3600 * 1000
+
+            conn.execute(
+                "INSERT OR REPLACE INTO mutes (symbol, until_ts) VALUES (?, ?)",
+                (sym, until_ms)
+            )
+            conn.commit()
+
+            from datetime import datetime, timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            until_dt = datetime.fromtimestamp(until_ms / 1000, tz=IST)
+
+            return (
+                f"\U0001f507 <b>{sym}</b> muted for {hours}h.\n"
+                f"No signals will be emitted until <b>{until_dt:%I:%M %p IST}</b>.\n"
+                f"Use /unmute {sym} to unmute early."
+            )
+        except Exception as exc:
+            log.warning("Error in /mute: %s", exc)
+            return f"\u26a0 Error: {exc}"
+
+    elif cmd == "/unmute":
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            parts = command.strip().split()
+            if len(parts) < 2:
+                return "\u26a0 Usage: /unmute &lt;symbol&gt;\nExample: /unmute BTC"
+            sym = parts[1].upper()
+            conn.execute("DELETE FROM mutes WHERE symbol = ?", (sym,))
+            conn.commit()
+            return f"\U0001f50a <b>{sym}</b> unmuted. Signals active."
+        except Exception as exc:
+            log.warning("Error in /unmute: %s", exc)
+            return f"\u26a0 Error: {exc}"
+
+    elif cmd == "/mutes":
+        if conn is None:
+            return "\u26a0 Database not available."
+        try:
+            rows = conn.execute("SELECT symbol, until_ts FROM mutes").fetchall()
+            if not rows:
+                return "\U0001f50a No symbols are currently muted."
+
+            from datetime import datetime, timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            now_ms = int(time.time() * 1000)
+
+            lines = ["\U0001f507 <b>Currently Muted Symbols:</b>"]
+            active_mutes = 0
+            for r in rows:
+                if r["until_ts"] > now_ms:
+                    until_dt = datetime.fromtimestamp(r["until_ts"] / 1000, tz=IST)
+                    lines.append(f"  \u2022 <b>{r['symbol']}</b> \u2014 until {until_dt:%d %b, %I:%M %p IST}")
+                    active_mutes += 1
+                else:
+                    conn.execute("DELETE FROM mutes WHERE symbol = ?", (r["symbol"],))
+            conn.commit()
+
+            if active_mutes == 0:
+                return "\U0001f50a No active mutes."
+            return "\n".join(lines)
+        except Exception as exc:
+            log.warning("Error in /mutes: %s", exc)
             return f"\u26a0 Error: {exc}"
 
     elif cmd == "/config":

@@ -134,6 +134,24 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
             log.debug("Skipping %s — session %s not active", sym.name, sym.session)
             continue
 
+        # Check if symbol is temporarily muted (via Telegram /mute command)
+        try:
+            if conn:
+                mute_row = conn.execute(
+                    "SELECT until_ts FROM mutes WHERE symbol = ?", (sym.name,)
+                ).fetchone()
+                if mute_row:
+                    now_ms = int(now.timestamp() * 1000)
+                    if mute_row["until_ts"] > now_ms:
+                        log.info("Skipping %s — muted until %s", sym.name,
+                                 datetime.fromtimestamp(mute_row["until_ts"] / 1000, tz=timezone.utc))
+                        continue
+                    else:
+                        conn.execute("DELETE FROM mutes WHERE symbol = ?", (sym.name,))
+                        conn.commit()
+        except Exception as exc:
+            log.debug("Mute check error for %s: %s", sym.name, exc)
+
         try:
             res = router.fetch_symbol(sym, now)
             if not res.ok:

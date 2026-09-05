@@ -40,6 +40,8 @@ class TradePlan:
     source: str               # what determined entry: ob, fvg, fib_ote, market
     trade_type: str = ""      # Intraday, Swing, Short-term, Positional
     brief_reason: str = ""    # 1-line human-readable reason for the signal
+    session: str = ""         # e.g. London Session, New York Session
+    killzone: str = ""        # e.g. London Open, New York Open (if in killzone)
 
 
 def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
@@ -156,6 +158,15 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     # Brief reason: why this signal was captured
     brief = _build_brief_reason(signal, direction, source)
 
+    # Session & Killzone detection
+    try:
+        from ..data.sessions import get_active_killzone, get_market_session
+        sess_name = get_market_session()
+        kz_name = get_active_killzone() or ""
+    except Exception:
+        sess_name = ""
+        kz_name = ""
+
     # Invalidation
     if direction > 0:
         inv = f"HTF/MTF close below SL ({sl:,.2f})"
@@ -180,6 +191,8 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         source=source,
         trade_type=trade_type,
         brief_reason=brief,
+        session=sess_name,
+        killzone=kz_name,
     )
 
 
