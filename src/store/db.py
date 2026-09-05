@@ -84,6 +84,11 @@ CREATE TABLE IF NOT EXISTS mutes (
     symbol   TEXT PRIMARY KEY,
     until_ts INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS bot_state (
+    key      TEXT PRIMARY KEY,
+    value    TEXT NOT NULL
+);
 """
 
 

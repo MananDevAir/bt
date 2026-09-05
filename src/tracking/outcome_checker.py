@@ -20,6 +20,7 @@ from ..store import signals as sig_store
 from ..logging_util import log_outcome
 from ..alerts.telegram import send_text
 from ..data.live_price import get_live_price
+from .streaks import update_streak
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
     expiry_ms = DEFAULT_EXPIRY_H * 3600 * 1000
     summary = {"checked": 0, "won": 0, "lost": 0, "expired": 0, "still_open": 0}
     hit_alerts: list[str] = []  # Telegram follow-up messages
+    streak_updates: list[str] = []  # track streak changes
 
     for sig in open_signals:
         signal_id = sig["id"]
@@ -160,40 +162,50 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         new_mae = max(old_mae, mae)
 
         # Check SL hit
-        if direction > 0 and low <= sl:
-            sig_store.update_status(conn, signal_id, "lost")
-            _update_outcome(conn, signal_id, "sl", now_ms,
-                            mfe_r=new_mfe, mae_r=new_mae, price=price,
-                            sl_hit_ts=now_ms)
-            if data_dir:
-                log_outcome(data_dir, signal_id, symbol, "lost",
-                            hit="sl", mfe_r=new_mfe, mae_r=new_mae)
-            summary["lost"] += 1
-            hit_alerts.append(
-                f"\U0001f534 <b>{symbol} SL HIT</b>\n"
-                f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
-                f"  Signal #{signal_id} closed as <b>LOSS</b>"
-            )
-            log.info("Signal #%d SL hit at %.2f (%s)", signal_id, price, symbol)
-            continue
-        elif direction < 0 and high >= sl:
-            sig_store.update_status(conn, signal_id, "lost")
-            _update_outcome(conn, signal_id, "sl", now_ms,
-                            mfe_r=new_mfe, mae_r=new_mae, price=price,
-                            sl_hit_ts=now_ms)
-            if data_dir:
-                log_outcome(data_dir, signal_id, symbol, "lost",
-                            hit="sl", mfe_r=new_mfe, mae_r=new_mae)
-            summary["lost"] += 1
-            hit_alerts.append(
-                f"\U0001f534 <b>{symbol} SL HIT</b>\n"
-                f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
-                f"  Signal #{signal_id} closed as <b>LOSS</b>"
-            )
-            log.info("Signal #%d SL hit at %.2f (%s)", signal_id, price, symbol)
+        sl_hit_long = direction > 0 and low <= sl
+        sl_hit_short = direction < 0 and high >= sl
+        
+        if sl_hit_long or sl_hit_short:
+            # Check if TP1 was already hit — if so, this is a partial win at breakeven
+            tp1_was_hit = outcome.get("tp1_hit_ts") if outcome else None
+            
+            if tp1_was_hit:
+                # TP1 was hit, SL moved to breakeven — this is a partial win
+                sig_store.update_status(conn, signal_id, "won")
+                _update_outcome(conn, signal_id, "sl_after_tp1", now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price,
+                                sl_hit_ts=now_ms)
+                if data_dir:
+                    log_outcome(data_dir, signal_id, symbol, "won",
+                                hit="sl_after_tp1", mfe_r=new_mfe, mae_r=new_mae)
+                summary["won"] += 1
+                update_streak(conn, "won")
+                hit_alerts.append(
+                    f"\U0001f7e1 <b>{symbol} SL HIT (breakeven)</b>\n"
+                    f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
+                    f"  Signal #{signal_id} closed as <b>PARTIAL WIN</b> (TP1 banked)"
+                )
+                log.info("Signal #%d SL hit at breakeven after TP1 (%s)", signal_id, symbol)
+            else:
+                # Normal loss — TP1 was never reached
+                sig_store.update_status(conn, signal_id, "lost")
+                _update_outcome(conn, signal_id, "sl", now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price,
+                                sl_hit_ts=now_ms)
+                if data_dir:
+                    log_outcome(data_dir, signal_id, symbol, "lost",
+                                hit="sl", mfe_r=new_mfe, mae_r=new_mae)
+                summary["lost"] += 1
+                update_streak(conn, "lost")
+                hit_alerts.append(
+                    f"\U0001f534 <b>{symbol} SL HIT</b>\n"
+                    f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
+                    f"  Signal #{signal_id} closed as <b>LOSS</b>"
+                )
+                log.info("Signal #%d SL hit at %.2f (%s)", signal_id, price, symbol)
             continue
 
-        # Check TP hits (track individually)
+        # Check TP hits (track individually with partial management)
         tp_hit = None
         if tp3 and ((direction > 0 and high >= tp3) or (direction < 0 and low <= tp3)):
             tp_hit = "tp3"
@@ -205,7 +217,8 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         if tp_hit:
             # Record individual TP timestamps
             tp_ts_col = f"{tp_hit}_hit_ts"
-            if outcome and not outcome.get(tp_ts_col):
+            already_hit = outcome.get(tp_ts_col) if outcome else None
+            if not already_hit:
                 conn.execute(
                     f"UPDATE outcomes SET {tp_ts_col} = ? WHERE signal_id = ?",
                     (now_ms, signal_id)
@@ -213,30 +226,69 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
             r_mult = {"tp1": "1.0", "tp2": "2.0", "tp3": "3.0"}.get(tp_hit, "?")
 
-            # Any TP hit = WIN (matches PLAN.md: "TP1+ hit before SL → won")
-            sig_store.update_status(conn, signal_id, "won")
-            _update_outcome(conn, signal_id, tp_hit, now_ms,
-                            mfe_r=new_mfe, mae_r=new_mae, price=price)
-            if data_dir:
-                log_outcome(data_dir, signal_id, symbol, "won",
-                            hit=tp_hit, mfe_r=new_mfe, mae_r=new_mae)
-            summary["won"] += 1
+            # Check which TPs were already hit before
+            tp1_already = outcome.get("tp1_hit_ts") if outcome else None
+            tp2_already = outcome.get("tp2_hit_ts") if outcome else None
 
             if tp_hit == "tp3":
+                # TP3 = FULL WIN — close the trade
+                sig_store.update_status(conn, signal_id, "won")
+                _update_outcome(conn, signal_id, tp_hit, now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price)
+                if data_dir:
+                    log_outcome(data_dir, signal_id, symbol, "won",
+                                hit=tp_hit, mfe_r=new_mfe, mae_r=new_mae)
+                summary["won"] += 1
+                update_streak(conn, "won")
                 hit_alerts.append(
                     f"\U0001f7e2 <b>{symbol} TP3 HIT \u2014 FULL WIN!</b>\n"
                     f"  Price: {price:,.2f}  |  +{r_mult}R\n"
                     f"  Signal #{signal_id} closed as <b>WIN</b> \U0001f389"
                 )
-            else:
+                log.info("Signal #%d TP3 hit at %.2f (%s) \u2014 FULL WIN",
+                         signal_id, price, symbol)
+                continue
+
+            elif tp_hit == "tp2" and not tp2_already:
+                # TP2 hit for the first time — alert but keep tracking for TP3
+                # SL is already at breakeven from TP1 hit
+                _update_outcome(conn, signal_id, "open", now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price)
                 hit_alerts.append(
-                    f"\U0001f7e2 <b>{symbol} {tp_hit.upper()} HIT \u2014 WIN</b>\n"
-                    f"  Price: {price:,.2f}  |  +{r_mult}R\n"
-                    f"  Signal #{signal_id} closed as <b>WIN</b>"
+                    f"\U0001f7e2 <b>{symbol} TP2 HIT \u2014 +{r_mult}R</b>\n"
+                    f"  Price: {price:,.2f}  |  Holding 20% for TP3\n"
+                    f"  Signal #{signal_id} still <b>OPEN</b>"
                 )
-            log.info("Signal #%d %s hit at %.2f (%s) \u2014 WON",
-                     signal_id, tp_hit.upper(), price, symbol)
-            continue
+                log.info("Signal #%d TP2 hit at %.2f (%s) \u2014 partial win, tracking TP3",
+                         signal_id, price, symbol)
+                summary["still_open"] += 1
+                continue
+
+            elif tp_hit == "tp1" and not tp1_already:
+                # TP1 hit for the first time — move SL to breakeven
+                # Update the signal's SL to entry_mid (breakeven)
+                conn.execute(
+                    "UPDATE signals SET sl = ? WHERE id = ?",
+                    (entry_mid, signal_id)
+                )
+                _update_outcome(conn, signal_id, "open", now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price)
+                hit_alerts.append(
+                    f"\U0001f7e2 <b>{symbol} TP1 HIT \u2014 +{r_mult}R</b>\n"
+                    f"  Price: {price:,.2f}  |  SL \u2192 breakeven ({entry_mid:,.2f})\n"
+                    f"  Signal #{signal_id} still <b>OPEN</b> (50% closed)"
+                )
+                log.info("Signal #%d TP1 hit at %.2f (%s) \u2014 SL moved to breakeven",
+                         signal_id, price, symbol)
+                summary["still_open"] += 1
+                continue
+
+            else:
+                # Already alerted for this TP level, just update tracking
+                _update_outcome(conn, signal_id, "open", now_ms,
+                                mfe_r=new_mfe, mae_r=new_mae, price=price)
+                summary["still_open"] += 1
+                continue
 
         # Still open — update tracking
         _update_outcome(conn, signal_id, "open", now_ms,

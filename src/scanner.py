@@ -146,6 +146,17 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
             signal = score_symbol(res.frames, sym.name, cfg)
             summary["scores"][sym.name] = round(signal.score, 1)
 
+            # Apply streak-based threshold adjustment
+            from src.tracking.streaks import get_threshold_adjustment
+            streak_bump = get_threshold_adjustment(conn)
+            if streak_bump > 0:
+                effective_watch = int(cfg.get("thresholds", "watch", default=18) or 18) + streak_bump
+                if abs(signal.score) < effective_watch:
+                    signal.label = "NEUTRAL"
+                    signal.direction = 0
+                    log.debug("%s: streak bump +%d raised threshold to %d, score %.1f → NEUTRAL",
+                              sym.name, streak_bump, effective_watch, signal.score)
+
             # Skip neutrals
             if signal.label == "NEUTRAL" or signal.direction == 0:
                 continue
