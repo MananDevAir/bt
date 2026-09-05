@@ -1,13 +1,13 @@
-name: Signal Bot 24/7
+﻿name: Signal Bot 24/7
 
 on:
   schedule:
     - cron: '0 */6 * * *'  # Safety net restart every 6 hours
-  workflow_dispatch:        # Allows manual trigger or self-dispatching relay
+  workflow_dispatch:        # Triggered by deploy.yml on push, or manually
 
 concurrency:
   group: signal-bot-relay
-  cancel-in-progress: false
+  cancel-in-progress: true   # Allow deploy.yml to cancel a running slot
 
 jobs:
   run-bot:
@@ -33,6 +33,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Run tests (gate — never deploy broken code)
+        run: |
+          python -m pytest tests/ -q --tb=short
 
       - name: Run 24/7 Continuous Relay Runner
         env:

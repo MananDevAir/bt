@@ -1,0 +1,31 @@
+﻿name: Deploy on Push
+
+# Triggers every time code lands on main (direct push or merged PR)
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Restart relay with new code
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write   # needed to cancel + dispatch workflow runs
+
+    steps:
+      - name: Cancel current relay runner (if any)
+        uses: styfle/cancel-workflow-action@0.12.1
+        with:
+          workflow_id: bot.yml      # filename of the relay workflow
+          access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for cancellation to propagate
+        run: sleep 10
+
+      - name: Dispatch fresh relay runner
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: bot.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
