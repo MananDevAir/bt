@@ -138,7 +138,7 @@ def _call_hf(token: str, model: str, prompt: str,
 
 
 def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
-    """Reject replies that contradict the rule engine's direction."""
+    """Reject replies that contradict the rule engine's direction or omit numbers."""
     direction = facts.get("direction", 0)
     lower = reply.lower()
 
@@ -156,8 +156,18 @@ def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
                 log.warning("LLM reply contradicts SHORT signal, rejecting")
                 return False
 
-    return True
+    # Check for preamble leakage
+    if "here is" in lower or "summary:" in lower or "sure," in lower:
+        log.warning("LLM reply contains preamble leakage, rejecting")
+        return False
+        
+    # Check if exact stop-loss is mentioned (prevents rounding/hallucinations)
+    sl = str(facts.get("sl", ""))
+    if sl and sl not in reply:
+        log.warning("LLM reply hallucinated or rounded SL (%s), rejecting", sl)
+        return False
 
+    return True
 
 def _build_user_prompt(facts: dict[str, Any]) -> str:
     """Build the user prompt from the fact sheet — compact JSON."""
