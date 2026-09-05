@@ -161,6 +161,32 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         new_mfe = max(old_mfe, mfe)
         new_mae = max(old_mae, mae)
 
+        # Check signal age expiration (e.g. 7 days without hitting TP3 or SL)
+        max_age_days = float(cfg.get("tracking", "max_signal_age_days", default=7) or 7)
+        age_ms = now_ms - sig["ts"]
+        if age_ms > max_age_days * 86400 * 1000:
+            current_r = (price - entry_mid) / risk if direction > 0 else (entry_mid - price) / risk
+            status_str = "won" if current_r >= 0.5 else ("lost" if current_r <= -0.5 else "expired")
+            sig_store.update_status(conn, signal_id, status_str)
+            _update_outcome(conn, signal_id, "expired", now_ms,
+                            mfe_r=new_mfe, mae_r=new_mae, price=price)
+            if data_dir:
+                log_outcome(data_dir, signal_id, symbol, status_str,
+                            hit="expired", mfe_r=new_mfe, mae_r=new_mae)
+            if status_str == "won":
+                summary["won"] += 1
+                update_streak(conn, "won")
+            elif status_str == "lost":
+                summary["lost"] += 1
+                update_streak(conn, "lost")
+            hit_alerts.append(
+                f"\u231b <b>{symbol} Signal #{signal_id} EXPIRED</b> ({max_age_days:.0f}d limit)\n"
+                f"  Price: {price:,.2f}  |  PnL: {current_r:+.1f}R\n"
+                f"  Status: <b>{status_str.upper()}</b>"
+            )
+            log.info("Signal #%d expired after %.1f days (%.1fR)", signal_id, max_age_days, current_r)
+            continue
+
         # Check SL hit
         sl_hit_long = direction > 0 and low <= sl
         sl_hit_short = direction < 0 and high >= sl

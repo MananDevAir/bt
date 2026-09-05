@@ -226,10 +226,11 @@ def _find_entry(signal: SignalResult, direction: int, close: float,
         if tfr.pa:
             for fib in tfr.pa.get("fibonacci", []):
                 if fib.kind == "retracement" and 0.600 <= fib.ratio <= 0.720:
-                    dist = abs(close - fib.price) / atr_val
-                    if dist < 2.0:
-                        band = 0.25 * atr_val
-                        return fib.price, fib.price - band, fib.price + band, "fib_ote"
+                    if getattr(fib, "direction", 1) == direction:
+                        dist = abs(close - fib.price) / atr_val
+                        if dist < 2.0:
+                            band = 0.25 * atr_val
+                            return fib.price, fib.price - band, fib.price + band, "fib_ote"
 
     # Fallback: market entry (current close ± 0.25 ATR)
     band = 0.25 * atr_val
@@ -267,9 +268,9 @@ def _find_stop(signal: SignalResult, direction: int, entry: float,
         if sl_struct != sl_atr:
             break
 
-    # If structure stop is too tight (< 0.8 ATR from entry), use ATR stop
+    # If structure stop is too tight (< 0.8 ATR) or too distant (> 2.8 ATR), use ATR stop
     struct_dist = abs(entry - sl_struct)
-    if struct_dist < 0.8 * atr_val:
+    if struct_dist < 0.8 * atr_val or struct_dist > 2.8 * atr_val:
         return sl_atr
 
     return sl_struct

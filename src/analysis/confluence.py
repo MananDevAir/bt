@@ -245,11 +245,13 @@ def _momentum_votes(last: pd.Series, mi_last: pd.Series,
         else:
             votes.append(Vote("stoch", "momentum", -0.3, "Stoch K < D"))
 
-    # Divergences
+    # Divergences (recency-weighted)
     for div in divs:
-        val = 0.8 * div.bias
+        bars = getattr(div, "bars_ago", 1)
+        decay = max(0.4, 1.0 - (bars / 20.0))
+        val = round(0.8 * div.bias * decay, 2)
         votes.append(Vote("divergence", "momentum", val,
-                          f"{div.kind} div on {div.osc} ({div.bars_ago} bars ago)"))
+                          f"{div.kind} div on {div.osc} ({bars} bars ago)"))
 
     # MFI
     mfi_val = mi_last.get("mfi", np.nan)
@@ -324,10 +326,12 @@ def _volume_votes(last: pd.Series, vp, mi_last: pd.Series,
         else:
             votes.append(Vote("obv_slope", "volume", -0.7, "OBV below EMA (distribution)"))
 
-    # Volume ratio
+    # Volume ratio & Climax
     vol_ratio = last.get("vol_ratio", np.nan)
     if not np.isnan(vol_ratio):
-        if vol_ratio > 1.5:
+        if vol_ratio > 2.5:
+            votes.append(Vote("vol_climax", "volume", +0.7, f"ultra-high volume climax ({vol_ratio:.1f}x avg)"))
+        elif vol_ratio > 1.5:
             votes.append(Vote("vol_spike", "volume", +0.5, f"volume {vol_ratio:.1f}x avg"))
         elif vol_ratio < 0.5:
             votes.append(Vote("vol_spike", "volume", -0.3, "low volume"))

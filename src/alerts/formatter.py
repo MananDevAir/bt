@@ -123,6 +123,26 @@ def format_signal(signal: Any, plan: Any | None,
         lines.append(f"  TP3        {fp(plan.tp3)}  ({plan.tp_allocation[2]}%)")
         lines.append("")
         lines.append(f"  R:R  <b>{plan.rr:.1f}</b>  |  Risk  {plan.risk_pct:.1f}%")
+
+        # Position sizing guide (1% risk on $10k reference equity)
+        risk_dist = abs(plan.entry_mid - plan.sl)
+        if risk_dist > 0:
+            risk_usd = 100.0
+            if sym in ("EURUSD", "GBPUSD"):
+                pips = risk_dist / 0.0001
+                lots = risk_usd / (pips * 10.0) if pips > 0 else 0
+                lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{lots:.2f} lots</b> ({pips:.1f} pips)")
+            elif sym in ("USDJPY",):
+                pips = risk_dist / 0.01
+                lots = risk_usd / (pips * 9.0) if pips > 0 else 0
+                lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{lots:.2f} lots</b> ({pips:.1f} pips)")
+            elif sym in ("BTC", "ETH"):
+                units = risk_usd / risk_dist
+                lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{units:.3f} {sym}</b>")
+            elif sym in ("XAUUSDT",):
+                oz = risk_usd / risk_dist
+                lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{oz:.2f} oz</b>")
+
         lines.append("\u2500" * 25)
         lines.append("")
 
