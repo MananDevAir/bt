@@ -186,26 +186,45 @@ def has_overlapping_signal(conn: sqlite3.Connection, symbol: str,
     """Check if an open signal already covers this price zone.
 
     Returns True if there is an open (status='open') signal for the same
-    symbol + direction whose entry zone overlaps the new one within 1 ATR
-    of tolerance.  This prevents firing near-identical signals when price
-    oscillates around the same level.
+    symbol + direction whose entry zone overlaps the new one within 2 ATR
+    of tolerance, OR if any signal (open or not) was emitted for the same
+    symbol + direction within the last 2 hours.
+
+    This prevents firing near-identical signals when price oscillates
+    around the same level, and stops rapid-fire duplicates during volatile
+    moves.
     """
     if atr <= 0:
         return False
     dir_str = "long" if direction > 0 else "short"
+
+    # Time-based gap: no two signals for same symbol+direction within 2 hours
+    import time
+    two_hours_ago_ms = int((time.time() - 2 * 3600) * 1000)
+    recent = conn.execute(
+        "SELECT id FROM signals "
+        "WHERE symbol = ? AND direction = ? AND ts > ?",
+        (symbol, dir_str, two_hours_ago_ms)
+    ).fetchone()
+    if recent:
+        log.debug("Time gap: %s %s signal #%d emitted within last 2h",
+                  symbol, dir_str, recent["id"])
+        return True
+
+    # Price-zone overlap check with 2 ATR tolerance band
     rows = conn.execute(
         "SELECT id, entry_low, entry_high FROM signals "
         "WHERE symbol = ? AND direction = ? AND status = 'open' "
         "AND entry_low IS NOT NULL AND entry_high IS NOT NULL",
         (symbol, dir_str)
     ).fetchall()
+    tolerance = 2 * atr
     for row in rows:
         existing_lo = float(row["entry_low"])
         existing_hi = float(row["entry_high"])
-        # Overlap check with ATR tolerance band
-        # New zone expanded by 1 ATR on each side
-        new_lo = entry_low - atr
-        new_hi = entry_high + atr
+        # New zone expanded by 2 ATR on each side
+        new_lo = entry_low - tolerance
+        new_hi = entry_high + tolerance
         if new_lo <= existing_hi and new_hi >= existing_lo:
             log.debug("Overlap: %s %s signal #%d entry [%.2f–%.2f] "
                       "overlaps new [%.2f–%.2f] (±%.2f ATR)",
@@ -214,4 +233,5 @@ def has_overlapping_signal(conn: sqlite3.Connection, symbol: str,
                       entry_low, entry_high, atr)
             return True
     return False
+
 

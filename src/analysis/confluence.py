@@ -102,6 +102,21 @@ def _trend_votes(ci: pd.DataFrame, mi: pd.DataFrame, last: pd.Series,
     else:
         votes.append(Vote("ema_stack", "trend", 0.0, "EMAs mixed"))
 
+    # EMA20 slope check: is the fast EMA fading?
+    # If EMA20 was bullish-stacked but is now falling, momentum is leaving.
+    if len(ci) >= 6:
+        ema20_now = float(ci["ema20"].iloc[-1])
+        ema20_5ago = float(ci["ema20"].iloc[-6])
+        slope = (ema20_now - ema20_5ago) / ema20_5ago * 100 if ema20_5ago > 0 else 0
+        if e20 > e50 > e200 and slope < -0.1:
+            # Bull stack but EMA20 is falling → momentum fading
+            votes.append(Vote("ema_slope", "trend", -0.5,
+                              f"EMA20 slope negative ({slope:.2f}%), bull fading"))
+        elif e20 < e50 < e200 and slope > 0.1:
+            # Bear stack but EMA20 is rising → bear losing steam
+            votes.append(Vote("ema_slope", "trend", +0.5,
+                              f"EMA20 slope positive ({slope:.2f}%), bear fading"))
+
     # SMA 50/200 golden/death cross
     if c["sma50"] > c["sma200"]:
         votes.append(Vote("sma_cross", "trend", +0.6, "golden cross (SMA50>200)"))
@@ -480,11 +495,10 @@ def _apply_gates(result: SignalResult, cfg: Config) -> dict[str, Any]:
         htf_bias = +1 if htf_bias_str == "bullish" else (-1 if htf_bias_str == "bearish" else 0)
         if htf_bias != 0 and htf_bias != result.direction:
             gates["htf_conflict"] = {
-                "action": "note", "detail": f"HTF bias={htf_bias_str} opposes signal",
-                # "max_label": "WATCH"
+                "action": "downgrade", "detail": f"HTF bias={htf_bias_str} opposes signal",
             }
-            # if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
-            #     result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
+            if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
+                result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
 
     # 2. ADX gate — need ADX >= 20 on MTF for trend signals
     min_adx = float(gates_cfg.get("min_adx", 20))
@@ -532,12 +546,11 @@ def _apply_gates(result: SignalResult, cfg: Config) -> dict[str, Any]:
             macro_bias = +1 if macro_bias_str == "bullish" else (-1 if macro_bias_str == "bearish" else 0)
             if macro_bias != 0 and macro_bias != result.direction:
                 gates["macro_conflict"] = {
-                    "action": "note",
+                    "action": "downgrade",
                     "detail": f"Macro(1w) bias={macro_bias_str} opposes signal",
-                    # "max_label": "WATCH"
                 }
-                # if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
-                #     result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
+                if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
+                    result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
 
     result.gate_passed = not any(
         g.get("action") == "drop" for g in gates.values()

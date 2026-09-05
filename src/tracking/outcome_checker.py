@@ -19,6 +19,7 @@ from ..config import Config
 from ..store import signals as sig_store
 from ..logging_util import log_outcome
 from ..alerts.telegram import send_text
+from ..data.live_price import get_live_price
 
 log = logging.getLogger(__name__)
 
@@ -85,8 +86,11 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             log.info("Signal #%d expired (%s)", signal_id, symbol)
             continue
 
-        # Get current price
-        candle = _get_latest_candle(conn, symbol)
+        # Get current price — prefer live API over stale cache
+        candle = get_live_price(symbol)
+        if candle is None:
+            # Fallback to cached candle if live fetch fails
+            candle = _get_latest_candle(conn, symbol)
         if candle is None:
             log.debug("No price data for %s, skipping signal #%d", symbol, signal_id)
             summary["still_open"] += 1
@@ -141,13 +145,13 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             _update_outcome(conn, signal_id, "open", now_ms, price=price)
             continue
 
-        # Calculate MFE/MAE
+        # Calculate MFE/MAE using high/low for true excursion
         if direction > 0:
-            mfe = max(0, (price - entry_mid) / risk)
-            mae = max(0, (entry_mid - price) / risk)
+            mfe = max(0, (high - entry_mid) / risk)   # best case: candle high
+            mae = max(0, (entry_mid - low) / risk)    # worst case: candle low
         else:
-            mfe = max(0, (entry_mid - price) / risk)
-            mae = max(0, (price - entry_mid) / risk)
+            mfe = max(0, (entry_mid - low) / risk)    # best case: candle low
+            mae = max(0, (high - entry_mid) / risk)   # worst case: candle high
 
         # Update running MFE/MAE
         old_mfe = outcome["mfe_r"] if outcome and outcome["mfe_r"] else 0

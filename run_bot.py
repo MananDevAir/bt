@@ -150,10 +150,10 @@ def main():
         elif args.github_actions:
             sleep_cfg = cfg.get("sleep_window", default={}) or {}
             is_sleeping = False
+            from datetime import datetime, timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            ist_now = datetime.now(IST)
             if sleep_cfg.get("enabled", False):
-                from datetime import datetime, timezone, timedelta
-                IST = timezone(timedelta(hours=5, minutes=30))
-                ist_now = datetime.now(IST)
                 start_h = int(sleep_cfg.get("start_hour_ist", 0))
                 end_h = int(sleep_cfg.get("end_hour_ist", 5))
                 if start_h <= ist_now.hour < end_h:
@@ -164,6 +164,51 @@ def main():
                 logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
             else:
                 cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+
+            # Daily summary at 9 PM IST (21:00)
+            if ist_now.hour == 21 and ist_now.minute < 15:
+                try:
+                    from src.store import signals as sig_store
+                    from src.alerts.telegram import send_text
+                    today_start_ms = int(datetime(ist_now.year, ist_now.month, ist_now.day,
+                                                  tzinfo=IST).timestamp() * 1000)
+                    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                    # Count today's scans and signals
+                    sig_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE ts > ?", (today_start_ms,)
+                    ).fetchone()[0]
+                    open_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE status = 'open'"
+                    ).fetchone()[0]
+                    won_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'won'",
+                        (today_start_ms,)
+                    ).fetchone()[0]
+                    lost_count = conn.execute(
+                        "SELECT COUNT(*) FROM signals WHERE ts > ? AND status = 'lost'",
+                        (today_start_ms,)
+                    ).fetchone()[0]
+                    summary_msg = (
+                        f"\U0001f4ca <b>Daily Summary</b>\n"
+                        f"\U0001f4cb Signals today: {sig_count}  |  Open: {open_count}\n"
+                        f"\U0001f7e2 Won: {won_count}  |  \U0001f534 Lost: {lost_count}\n"
+                        f"\u2705 Bot healthy\n"
+                        f"\U0001f552 {ist_now.strftime('%d %b %Y, %I:%M %p IST')}"
+                    )
+                    send_text(summary_msg)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Daily summary failed: %s", exc)
+
+            # Daily report at midnight UTC
+            utc_now = datetime.now(timezone.utc)
+            if utc_now.hour == 0 and utc_now.minute < 15:
+                try:
+                    from src.tracking.report import daily_report
+                    daily_report(conn, cfg, send=True)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Daily report failed: %s", exc)
         else:
             cmd_loop(cfg, conn, live=args.live)
     finally:
