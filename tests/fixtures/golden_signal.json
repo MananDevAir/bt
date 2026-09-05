@@ -1,5 +1,5 @@
 {
-  "confidence": 61.2,
+  "confidence": 61.4,
   "direction": 1,
   "gate_passed": true,
   "gates": {
@@ -15,8 +15,8 @@
   "label": "NEUTRAL",
   "max_possible": 1200.0,
   "plan": null,
-  "raw_score": 184.76619,
-  "score": 15.4,
+  "raw_score": 191.04619,
+  "score": 15.9,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
@@ -532,8 +532,8 @@
     "1w": {
       "regime": "quiet",
       "structure_bias": "bullish",
-      "vote_count": 25,
-      "vote_sum": 7.75,
+      "vote_count": 27,
+      "vote_sum": 8.73,
       "votes": [
         {
           "category": "momentum",
@@ -648,6 +648,18 @@
           "detail": "price above POC (21,378)",
           "name": "vp_poc",
           "value": 0.4
+        },
+        {
+          "category": "zones",
+          "detail": "pin_bar (+)",
+          "name": "candle_pattern",
+          "value": 0.48
+        },
+        {
+          "category": "zones",
+          "detail": "pin_bar (+)",
+          "name": "candle_pattern",
+          "value": 0.5
         },
         {
           "category": "zones",

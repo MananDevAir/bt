@@ -202,36 +202,50 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
 # =========================================================================== #
 def _find_entry(signal: SignalResult, direction: int, close: float,
                 atr_val: float) -> tuple[float, float, float, str]:
-    """Find the best entry zone from OBs, FVGs, fib OTE, or market."""
+    """Find the best entry zone from OBs, FVGs, fib OTE, or market.
+
+    Iterates LTF → HTF so a tight 15m OB always wins over a wide 4h OB.
+    """
+    cfg = signal._cfg if hasattr(signal, "_cfg") else None
+    if cfg is not None:
+        entry_tfs = [cfg.ltf] + list(cfg.mtf) + [cfg.htf]
+    else:
+        entry_tfs = list(signal.tf_results.keys())
 
     # Priority 1: nearest unmitigated order block in signal direction
-    for tf, tfr in signal.tf_results.items():
-        if tfr.smc:
-            for ob in tfr.smc.get("order_blocks_unmitigated", []):
-                if ob.direction == direction:
-                    dist = abs(close - (ob.hi + ob.lo) / 2) / atr_val
-                    if dist < 3.0:  # within 3 ATR
-                        return (ob.hi + ob.lo) / 2, ob.lo, ob.hi, "order_block"
+    for tf in entry_tfs:
+        tfr = signal.tf_results.get(tf)
+        if not tfr or not tfr.smc:
+            continue
+        for ob in tfr.smc.get("order_blocks_unmitigated", []):
+            if ob.direction == direction:
+                dist = abs(close - (ob.hi + ob.lo) / 2) / atr_val
+                if dist < 3.0:  # within 3 ATR
+                    return (ob.hi + ob.lo) / 2, ob.lo, ob.hi, "order_block"
 
     # Priority 2: nearest open FVG in signal direction
-    for tf, tfr in signal.tf_results.items():
-        if tfr.smc:
-            for fvg in tfr.smc.get("fvg_open", []):
-                if fvg.direction == direction:
-                    dist = abs(close - (fvg.hi + fvg.lo) / 2) / atr_val
-                    if dist < 3.0:
-                        return (fvg.hi + fvg.lo) / 2, fvg.lo, fvg.hi, "fvg"
+    for tf in entry_tfs:
+        tfr = signal.tf_results.get(tf)
+        if not tfr or not tfr.smc:
+            continue
+        for fvg in tfr.smc.get("fvg_open", []):
+            if fvg.direction == direction:
+                dist = abs(close - (fvg.hi + fvg.lo) / 2) / atr_val
+                if dist < 3.0:
+                    return (fvg.hi + fvg.lo) / 2, fvg.lo, fvg.hi, "fvg"
 
     # Priority 3: Fibonacci OTE (0.618-0.705)
-    for tf, tfr in signal.tf_results.items():
-        if tfr.pa:
-            for fib in tfr.pa.get("fibonacci", []):
-                if fib.kind == "retracement" and 0.600 <= fib.ratio <= 0.720:
-                    if getattr(fib, "direction", 1) == direction:
-                        dist = abs(close - fib.price) / atr_val
-                        if dist < 2.0:
-                            band = 0.25 * atr_val
-                            return fib.price, fib.price - band, fib.price + band, "fib_ote"
+    for tf in entry_tfs:
+        tfr = signal.tf_results.get(tf)
+        if not tfr or not tfr.pa:
+            continue
+        for fib in tfr.pa.get("fibonacci", []):
+            if fib.kind == "retracement" and 0.600 <= fib.ratio <= 0.720:
+                if getattr(fib, "direction", 1) == direction:
+                    dist = abs(close - fib.price) / atr_val
+                    if dist < 2.0:
+                        band = 0.25 * atr_val
+                        return fib.price, fib.price - band, fib.price + band, "fib_ote"
 
     # Fallback: market entry (current close ± 0.25 ATR)
     band = 0.25 * atr_val
@@ -250,7 +264,16 @@ def _find_stop(signal: SignalResult, direction: int, entry: float,
 
     # Structure-based stop: last swing in the opposite direction
     sl_struct = sl_atr  # fallback
-    for tf in ("15m", "1h", "4h", "1d"):
+    # Build TF list from signal to avoid hardcoding; prefer LTF for precision.
+    stop_tfs: list[str] = []
+    for tf in signal.tf_results:
+        stop_tfs.append(tf)
+    # Sort rough LTF-first order by common timeframe durations
+    _tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+                   "1h": 60, "2h": 120, "4h": 240, "6h": 360, "12h": 720,
+                   "1d": 1440, "1w": 10080}
+    stop_tfs.sort(key=lambda t: _tf_minutes.get(t, 9999))
+    for tf in stop_tfs:
         tfr = signal.tf_results.get(tf)
         if not tfr or not tfr.smc:
             continue
@@ -341,9 +364,12 @@ def _classify_trade_type(signal: 'SignalResult', horizon: str) -> str:
             avg = sum(abs(v.value) for v in tfr.votes) / len(tfr.votes)
             tf_strength[tf] = avg
 
-    # Check if higher timeframes dominate
-    macro_htf = sum(tf_strength.get(tf, 0) for tf in ("1w", "1d"))
-    mtf = sum(tf_strength.get(tf, 0) for tf in ("4h", "1h"))
+    # Check if higher timeframes dominate — use averages, not sums,
+    # so adding a second macro TF doesn't double-count macro weight.
+    macro_tfs = [tf for tf in ("1w", "1d") if tf in tf_strength]
+    macro_htf = (sum(tf_strength[tf] for tf in macro_tfs) / len(macro_tfs)) if macro_tfs else 0.0
+    mtf_tfs = [tf for tf in ("4h", "1h") if tf in tf_strength]
+    mtf = (sum(tf_strength[tf] for tf in mtf_tfs) / len(mtf_tfs)) if mtf_tfs else 0.0
     ltf = tf_strength.get("15m", 0)
 
     score_abs = abs(signal.score)

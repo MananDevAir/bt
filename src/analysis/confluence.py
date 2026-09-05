@@ -354,7 +354,11 @@ def _zone_votes(pa_data: dict, smc_data: dict, close: float,
         if fib.kind == "retracement" and 0.600 <= fib.ratio <= 0.720:
             dist = abs(close - fib.price) / atr_val
             if dist < 1.0:
-                fib_dir = getattr(fib, "direction", 1)
+                # direction is always set by fibonacci_retracement(); default 0
+                # (neutral) if somehow absent — avoids accidental bullish bias.
+                fib_dir = getattr(fib, "direction", 0)
+                if fib_dir == 0:
+                    break  # skip a direction-unknown fib entirely
                 bias_val = 0.7 * fib_dir
                 votes.append(Vote("fib_ote", "zones", bias_val,
                                   f"price in {'bull' if fib_dir > 0 else 'bear'} fib OTE ({fib.ratio:.3f} @ {fib.price:,.0f})"))
@@ -364,6 +368,15 @@ def _zone_votes(pa_data: dict, smc_data: dict, close: float,
     for sweep in smc_data.get("liquidity_sweeps", [])[-2:]:
         votes.append(Vote("liq_sweep", "zones", 0.6 * sweep.direction,
                           f"{'bull' if sweep.direction > 0 else 'bear'} liq sweep"))
+
+    # Candle patterns (engulfing, pin bar, shooting star, marubozu) near zones.
+    # Only the last 3 bars are evaluated; bias=0 (doji, inside bar) are skipped.
+    for pat in pa_data.get("patterns", [])[-3:]:
+        if pat.bias != 0:
+            direction_word = "+" if pat.bias > 0 else "-"
+            votes.append(Vote("candle_pattern", "zones",
+                              round(0.5 * pat.bias * pat.strength, 2),
+                              f"{pat.name} ({direction_word})"))
 
     return votes
 
@@ -488,7 +501,7 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
             if n > 0:
                 avg = cat_scores.get(cat, 0.0) / n  # average vote in -1..+1
                 raw_score += mult * w * avg
-            max_possible += mult * w  # theoretical max if all votes = +1
+                max_possible += mult * w  # only count categories that actually fired
 
     if max_possible <= 0:
         return result
@@ -548,15 +561,27 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
         tf_bonus = 0.0
 
     # 3. Category confluence breadth bonus (up to +8%)
+    # Normalise by number of TFs so a TF with many votes doesn't inflate the sum.
     cat_agree = 0
     all_cats = {"trend", "structure", "momentum", "zones", "volume"}
     cat_direction_sums: dict[str, float] = {}
+    cat_tf_counts: dict[str, int] = {}  # how many TFs contributed to each category
     for tfr in result.tf_results.values():
+        cats_in_tf: set[str] = set()
         for v in tfr.votes:
-            cat_direction_sums[v.category] = cat_direction_sums.get(v.category, 0.0) + (v.value * result.direction)
+            cat_direction_sums[v.category] = (
+                cat_direction_sums.get(v.category, 0.0) + (v.value * result.direction))
+            cats_in_tf.add(v.category)
+        for cat in cats_in_tf:
+            cat_tf_counts[cat] = cat_tf_counts.get(cat, 0) + 1
     for cat in all_cats:
-        if cat_direction_sums.get(cat, 0.0) > 0.2:
-            cat_agree += 1
+        n_tfs = cat_tf_counts.get(cat, 0)
+        if n_tfs > 0:
+            # Normalise raw sum by TF count so a category with many-vote TFs
+            # gets the same weight as one with few-vote TFs.
+            normalised = cat_direction_sums.get(cat, 0.0) / n_tfs
+            if normalised > 0.2:
+                cat_agree += 1
     cat_bonus = (cat_agree / len(all_cats)) * 8.0
 
     # 4. Gate penalties (-5% per downgrade)

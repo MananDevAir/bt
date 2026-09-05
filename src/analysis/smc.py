@@ -150,8 +150,9 @@ def detect_bos(df: pd.DataFrame, structure: list[StructurePoint] | None = None,
             body_close = c[i]
             if body_close > sh.price and sh.idx not in broken_highs:
                 broken_highs.add(sh.idx)
-                # Determine if this is BOS or CHoCH
-                # If bias was already bullish, this is BOS; if bearish, this is CHoCH
+                # CHoCH: break is against the bias at the swing's FORMATION.
+                # We read bias at sh.idx (not at i) because ICT defines a CHoCH
+                # as breaking a swing that was formed under the opposing trend.
                 bias_at_break = _bias_at(structure, sh.idx)
                 kind = "bos" if bias_at_break >= 0 else "choch"
                 result.append(BOS(i, df.index[i], +1, kind, sh.price, body_close))

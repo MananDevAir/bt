@@ -246,24 +246,25 @@ def test_timeframe_multipliers_shift_the_score(cfg, frozen_frames):
         f"tf_multiplier had no effect: both scored {a:+.1f}")
 
 
-def test_absent_categories_still_dilute_the_score(cfg, frozen_frames):
-    """Documented quirk, not a bug: `max_possible` adds every configured
-    category's weight for every timeframe, whether or not that category emitted
-    any votes (confluence.py:415). So adding a weighted category that never
-    fires pulls every score toward zero.
+def test_absent_categories_do_not_dilute_the_score(cfg, frozen_frames):
+    """Fixed behaviour: `max_possible` now only counts categories that fired.
 
-    Pinned because it is surprising, and because a future "fix" that only
-    counts categories with votes would move every score in the project —
-    including the thresholds tuned against them.
+    Previously (old code) `max_possible` added every configured category's
+    weight for every timeframe, whether or not it emitted any votes, so adding
+    a weighted category that never fires pulled every score toward zero.
+
+    After the fix (confluence.py L487), only categories with at least one vote
+    contribute to `max_possible`. A 'ghost' category that never fires must NOT
+    affect the score at all.
     """
     with_ghost = _cfg_with(cfg, weights={**DEFAULT_WEIGHTS, "ghost": 100},
                            symbol_overrides={})
     baseline = score_symbol(frozen_frames, SYM,
                             _cfg_with(cfg, symbol_overrides={}))
     diluted = score_symbol(frozen_frames, SYM, with_ghost)
-    assert abs(diluted.score) < abs(baseline.score), (
-        f"a never-firing category did not dilute: {baseline.score:+.1f} -> "
-        f"{diluted.score:+.1f}")
+    assert diluted.score == pytest.approx(baseline.score), (
+        f"ghost category changed score: {baseline.score:+.1f} -> {diluted.score:+.1f}; "
+        f"empty categories must not affect max_possible")
 
 
 # --------------------------------------------------------------------------- #

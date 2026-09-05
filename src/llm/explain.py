@@ -204,6 +204,13 @@ def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
             log.warning("LLM reply contradicts SHORT signal direction, rejecting")
             return False
 
+    # Reject over-long replies that would bloat the Telegram alert.
+    # The Telegram limit is 4096 chars; a narration should be 60-100 words.
+    word_count = len(reply.split())
+    if word_count > 120:
+        log.warning("LLM reply too long (%d words), rejecting", word_count)
+        return False
+
     return True
 
 
