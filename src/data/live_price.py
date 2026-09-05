@@ -28,7 +28,17 @@ _BINANCE_MAP: dict[str, str] = {
     "XAUUSDT": "XAUTUSDT",
 }
 
-# Symbol → Yahoo Finance ticker mapping
+# Symbol → Hyperliquid builder perps (real-time 24/7/365, zero delay)
+_HYPERLIQUID_MAP: dict[str, str] = {
+    "US100": "xyz:XYZ100",
+    "US500": "xyz:SP500",
+    "EURUSD": "xyz:EUR",
+    "BTC": "BTC",
+    "ETH": "ETH",
+    "XAUUSDT": "PAXG",
+}
+
+# Symbol → Yahoo Finance ticker mapping (fallback)
 _YAHOO_MAP: dict[str, str] = {
     "US100": "^NDX",
     "US500": "^GSPC",
@@ -42,30 +52,76 @@ _YAHOO_MAP: dict[str, str] = {
 def get_live_price(symbol: str) -> dict[str, float] | None:
     """Fetch the latest price for a symbol.
 
-    Returns {"high": float, "low": float, "close": float} or None on failure.
-    Tries Binance first (for crypto), then Yahoo Finance (for everything else).
+    Returns {"high": float, "low": float, "close": float, "source": str} or None on failure.
+    Priority order:
+      1. Binance (for crypto / metals)
+      2. Hyperliquid (for 24/7 real-time perp indices US100, US500, EURUSD)
+      3. Yahoo Finance (fallback for traditional equities / forex)
     """
-    # Try Binance
+    # 1. Try Binance
     binance_ticker = _BINANCE_MAP.get(symbol)
     if binance_ticker:
         result = _fetch_binance(binance_ticker)
         if result:
+            result["source"] = "Binance"
             return result
 
-    # Try Yahoo Finance
+    # 2. Try Hyperliquid (24/7 real-time sub-second perp market)
+    hl_ticker = _HYPERLIQUID_MAP.get(symbol)
+    if hl_ticker:
+        result = _fetch_hyperliquid(hl_ticker)
+        if result:
+            result["source"] = "Hyperliquid"
+            return result
+
+    # 3. Try Yahoo Finance (fallback)
     yahoo_ticker = _YAHOO_MAP.get(symbol)
     if yahoo_ticker:
         result = _fetch_yahoo(yahoo_ticker)
         if result:
+            result["source"] = "Yahoo Finance"
             return result
 
     # Fallback: try Binance with symbol + USDT
     result = _fetch_binance(f"{symbol}USDT")
     if result:
+        result["source"] = "Binance"
         return result
 
     log.warning("Could not fetch live price for %s", symbol)
     return None
+
+
+def _fetch_hyperliquid(ticker: str) -> dict[str, float] | None:
+    """Fetch the latest 15m candle from Hyperliquid (24/7 real-time, keyless)."""
+    import time
+    now_ms = int(time.time() * 1000)
+    url = "https://api.hyperliquid.xyz/info"
+    payload = {
+        "type": "candleSnapshot",
+        "req": {
+            "coin": ticker,
+            "interval": "15m",
+            "startTime": now_ms - 3600 * 1000,
+            "endTime": now_ms,
+        },
+    }
+    try:
+        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=_TIMEOUT)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            return None
+        candle = data[-1]
+        return {
+            "high": float(candle["h"]),
+            "low": float(candle["l"]),
+            "close": float(candle["c"]),
+        }
+    except Exception as exc:
+        log.debug("Hyperliquid fetch failed for %s: %s", ticker, exc)
+        return None
 
 
 def _fetch_binance(ticker: str) -> dict[str, float] | None:
