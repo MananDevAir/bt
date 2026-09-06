@@ -121,9 +121,11 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             continue
 
         # Check if entry was filled
-        outcome = conn.execute(
+        _row = conn.execute(
             "SELECT * FROM outcomes WHERE signal_id = ?", (signal_id,)
         ).fetchone()
+        # Convert sqlite3.Row → dict so .get() works everywhere below.
+        outcome = dict(_row) if _row is not None else None
         entry_filled = outcome["entry_filled"] if outcome else 0
 
         if not entry_filled:
