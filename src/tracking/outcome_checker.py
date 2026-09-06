@@ -18,6 +18,7 @@ from typing import Any
 from ..config import Config
 from ..store import signals as sig_store
 from ..logging_util import log_outcome
+from ..alerts.formatter import format_tp_update, format_sl_update, format_expiry_update
 from ..alerts.telegram import send_text
 from ..data.live_price import get_live_price
 from .streaks import update_streak
@@ -69,13 +70,13 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
     now_ms = int(time.time() * 1000)
     expiry_ms = DEFAULT_EXPIRY_H * 3600 * 1000
     summary = {"checked": 0, "won": 0, "lost": 0, "expired": 0, "still_open": 0}
-    hit_alerts: list[str] = []  # Telegram follow-up messages
-    streak_updates: list[str] = []  # track streak changes
+    hit_alerts: list[tuple[str, int | None]] = []  # (formatted_message, reply_to_tg_msg_id)
 
     for sig in open_signals:
         signal_id = sig["id"]
         symbol = sig["symbol"]
         direction = 1 if sig["direction"] == "long" else -1
+        tg_msg_id = sig.get("tg_msg_id")
 
         # Check expiry
         age_ms = now_ms - sig["ts"]
@@ -124,7 +125,6 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         _row = conn.execute(
             "SELECT * FROM outcomes WHERE signal_id = ?", (signal_id,)
         ).fetchone()
-        # Convert sqlite3.Row → dict so .get() works everywhere below.
         outcome = dict(_row) if _row is not None else None
         entry_filled = outcome["entry_filled"] if outcome else 0
 
@@ -181,11 +181,9 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             elif status_str == "lost":
                 summary["lost"] += 1
                 update_streak(conn, "lost")
-            hit_alerts.append(
-                f"\u231b <b>{symbol} Signal #{signal_id} EXPIRED</b> ({max_age_days:.0f}d limit)\n"
-                f"  Price: {price:,.2f}  |  PnL: {current_r:+.1f}R\n"
-                f"  Status: <b>{status_str.upper()}</b>"
-            )
+            
+            exp_msg = format_expiry_update(sig, price, current_r, max_age_days)
+            hit_alerts.append((exp_msg, tg_msg_id))
             log.info("Signal #%d expired after %.1f days (%.1fR)", signal_id, max_age_days, current_r)
             continue
 
@@ -209,11 +207,8 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit="sl_after_tp2", mfe_r=new_mfe, mae_r=new_mae)
                 summary["won"] += 1
                 update_streak(conn, "won")
-                hit_alerts.append(
-                    f"\U0001f7e2 <b>{symbol} TRAILED SL HIT (TP1 level)</b>\n"
-                    f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
-                    f"  Signal #{signal_id} closed as <b>WIN</b> (80% profit locked)"
-                )
+                sl_msg = format_sl_update(sig, price, "trailed_tp1", "1.60", new_mfe)
+                hit_alerts.append((sl_msg, tg_msg_id))
                 log.info("Signal #%d SL hit at TP1 level after TP2 (%s)", signal_id, symbol)
             elif tp1_was_hit:
                 # TP1 was hit, SL moved to breakeven — this is a partial win
@@ -226,11 +221,8 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit="sl_after_tp1", mfe_r=new_mfe, mae_r=new_mae)
                 summary["won"] += 1
                 update_streak(conn, "won")
-                hit_alerts.append(
-                    f"\U0001f7e1 <b>{symbol} SL HIT (breakeven)</b>\n"
-                    f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
-                    f"  Signal #{signal_id} closed as <b>PARTIAL WIN</b> (TP1 banked)"
-                )
+                sl_msg = format_sl_update(sig, price, "breakeven", "0.50", new_mfe)
+                hit_alerts.append((sl_msg, tg_msg_id))
                 log.info("Signal #%d SL hit at breakeven after TP1 (%s)", signal_id, symbol)
             else:
                 # Normal loss — TP1 was never reached
@@ -243,11 +235,8 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit="sl", mfe_r=new_mfe, mae_r=new_mae)
                 summary["lost"] += 1
                 update_streak(conn, "lost")
-                hit_alerts.append(
-                    f"\U0001f534 <b>{symbol} SL HIT</b>\n"
-                    f"  Price: {price:,.2f}  |  MFE: {new_mfe:.1f}R\n"
-                    f"  Signal #{signal_id} closed as <b>LOSS</b>"
-                )
+                sl_msg = format_sl_update(sig, price, "loss", "-1.00", new_mfe)
+                hit_alerts.append((sl_msg, tg_msg_id))
                 log.info("Signal #%d SL hit at %.2f (%s)", signal_id, price, symbol)
             continue
 
@@ -287,11 +276,9 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit=tp_hit, mfe_r=new_mfe, mae_r=new_mae)
                 summary["won"] += 1
                 update_streak(conn, "won")
-                hit_alerts.append(
-                    f"\U0001f7e2 <b>{symbol} TP3 HIT \u2014 FULL WIN!</b>\n"
-                    f"  Price: {price:,.2f}  |  +{r_mult}R\n"
-                    f"  Signal #{signal_id} closed as <b>WIN</b> \U0001f389"
-                )
+                tp_msg = format_tp_update(sig, "tp3", "3.0", price,
+                                          "Trade Closed (Target Met)", "100% Locked (+3.0R) \U0001f389")
+                hit_alerts.append((tp_msg, tg_msg_id))
                 log.info("Signal #%d TP3 hit at %.2f (%s) \u2014 FULL WIN",
                          signal_id, price, symbol)
                 continue
@@ -305,11 +292,10 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                     )
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
-                hit_alerts.append(
-                    f"\U0001f7e2 <b>{symbol} TP2 HIT \u2014 +{r_mult}R</b>\n"
-                    f"  Price: {price:,.2f}  |  SL \u2192 TP1 level ({tp1:,.2f})\n"
-                    f"  Holding 20% for TP3 (80% banked) \u2705"
-                )
+                tp_msg = format_tp_update(sig, "tp2", "2.0", price,
+                                          f"SL Trailed to TP1 level ({tp1:,.2f})",
+                                          "80% Locked (Holding 20% for TP3)")
+                hit_alerts.append((tp_msg, tg_msg_id))
                 log.info("Signal #%d TP2 hit at %.2f (%s) \u2014 SL trailed to TP1, tracking TP3",
                          signal_id, price, symbol)
                 summary["still_open"] += 1
@@ -323,11 +309,10 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                 )
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
-                hit_alerts.append(
-                    f"\U0001f7e2 <b>{symbol} TP1 HIT \u2014 +{r_mult}R</b>\n"
-                    f"  Price: {price:,.2f}  |  SL \u2192 breakeven ({entry_mid:,.2f})\n"
-                    f"  Signal #{signal_id} still <b>OPEN</b> (50% closed)"
-                )
+                tp_msg = format_tp_update(sig, "tp1", "1.0", price,
+                                          f"SL Moved to Breakeven ({entry_mid:,.2f})",
+                                          "50% Banked (Risk-Free Trade)")
+                hit_alerts.append((tp_msg, tg_msg_id))
                 log.info("Signal #%d TP1 hit at %.2f (%s) \u2014 SL moved to breakeven",
                          signal_id, price, symbol)
                 summary["still_open"] += 1
@@ -347,18 +332,15 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
     conn.commit()
 
-    # Send follow-up alerts to Telegram
-    if hit_alerts:
-        from datetime import datetime, timezone, timedelta
-        IST = timezone(timedelta(hours=5, minutes=30))
-        ist_now = datetime.now(IST).strftime("%d %b, %I:%M %p IST")
-        combined = "\n\n".join(hit_alerts)
-        msg = f"{combined}\n\n\U0001f552 {ist_now}"
+    # Send follow-up alerts to Telegram as direct replies to the signal message
+    for alert_text, reply_id in hit_alerts:
         try:
-            send_text(msg)
-            log.info("Sent %d outcome alert(s)", len(hit_alerts))
+            send_text(alert_text, reply_to_message_id=reply_id)
         except Exception as exc:
-            log.warning("Failed to send outcome alerts: %s", exc)
+            log.warning("Failed to send outcome alert: %s", exc)
+
+    if hit_alerts:
+        log.info("Sent %d outcome alert(s)", len(hit_alerts))
 
     log.info("Outcome check: %d checked, %d won, %d lost, %d expired, %d open",
              summary["checked"], summary["won"], summary["lost"],

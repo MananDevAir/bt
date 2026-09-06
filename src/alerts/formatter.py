@@ -231,3 +231,91 @@ def format_watchlist(symbols: list[str]) -> str:
     for sym in symbols:
         lines.append(f"  \u2022 {sym}")
     return "\n".join(lines)
+
+
+def format_tp_update(sig: dict[str, Any], tp_level: str,
+                     r_mult: str, exit_price: float,
+                     sl_action: str, profit_banked: str) -> str:
+    """Format a rich Take Profit update card for Telegram."""
+    sym = sig.get("symbol", "")
+    sig_id = sig.get("id", "?")
+    direction = sig.get("direction", "long").upper()
+    fp = lambda v: _fmt_price(v, sym)
+
+    progress_map = {
+        "tp1": "[🎯 TP1 (50%)] ➔ [⏳ TP2] ➔ [⏳ TP3]",
+        "tp2": "[✅ TP1] ➔ [🎯 TP2 (30%)] ➔ [⏳ TP3]",
+        "tp3": "[✅ TP1] ➔ [✅ TP2] ➔ [🎉 TP3 (20%) \u2014 FULL WIN]",
+    }
+    progress = progress_map.get(tp_level, "")
+
+    lines = [
+        f"\U0001f3af <b>TAKE PROFIT {tp_level.upper()} HIT (+{r_mult}R)</b>",
+        "\u2500" * 25,
+        f"\U0001f4cc <b>Trade:</b> #{sig_id} \u2022 <b>{sym} {direction}</b>",
+        f"\U0001f4b5 <b>Exit Price:</b> {fp(exit_price)}",
+    ]
+    if progress:
+        lines.append(f"\U0001f4ca <b>Status:</b> {progress}")
+    if sl_action:
+        lines.append(f"\U0001f6e1\ufe0f <b>Action:</b> {sl_action}")
+    if profit_banked:
+        lines.append(f"\U0001f4b0 <b>Banked:</b> {profit_banked}")
+
+    lines.append("\u2500" * 25)
+    lines.append(f"\U0001f552 {_ist_now()}")
+    return "\n".join(lines)
+
+
+def format_sl_update(sig: dict[str, Any], exit_price: float,
+                     sl_type: str, pnl_r: str, mfe_r: float = 0.0) -> str:
+    """Format a rich Stop Loss / Breakeven update card for Telegram."""
+    sym = sig.get("symbol", "")
+    sig_id = sig.get("id", "?")
+    direction = sig.get("direction", "long").upper()
+    fp = lambda v: _fmt_price(v, sym)
+
+    if sl_type == "breakeven":
+        header = "\U0001f6e1\ufe0f <b>BREAKEVEN STOP HIT (Risk-Free Exit)</b>"
+        res_str = f"Partial Win (TP1 secured at +1.0R, remaining at BE)"
+        pnl_badge = f"\U0001f4b0 <b>Net Gain:</b> +{pnl_r}R"
+    elif sl_type == "trailed_tp1":
+        header = "\U0001f7e2 <b>TRAILED STOP HIT (TP1 Locked Level)</b>"
+        res_str = f"Solid Win (80% profit banked at TP1 & TP2)"
+        pnl_badge = f"\U0001f4b0 <b>Net Gain:</b> +{pnl_r}R"
+    else:
+        header = "\U0001f534 <b>STOP LOSS HIT</b>"
+        res_str = f"Closed as Loss"
+        pnl_badge = f"\U0001f4c9 <b>Loss:</b> -1.0R (Max Adverse: {mfe_r:.1f}R)"
+
+    lines = [
+        header,
+        "\u2500" * 25,
+        f"\U0001f4cc <b>Trade:</b> #{sig_id} \u2022 <b>{sym} {direction}</b>",
+        f"\U0001f4b5 <b>Exit Price:</b> {fp(exit_price)}",
+        f"\U0001f4ca <b>Result:</b> {res_str}",
+        pnl_badge,
+        "\u2500" * 25,
+        f"\U0001f552 {_ist_now()}",
+    ]
+    return "\n".join(lines)
+
+
+def format_expiry_update(sig: dict[str, Any], exit_price: float,
+                         current_r: float, max_age_days: float) -> str:
+    """Format a signal expiration update card for Telegram."""
+    sym = sig.get("symbol", "")
+    sig_id = sig.get("id", "?")
+    direction = sig.get("direction", "long").upper()
+    fp = lambda v: _fmt_price(v, sym)
+
+    lines = [
+        f"\u231b <b>SIGNAL #{sig_id} EXPIRED ({max_age_days:.0f}d Limit)</b>",
+        "\u2500" * 25,
+        f"\U0001f4cc <b>Trade:</b> #{sig_id} \u2022 <b>{sym} {direction}</b>",
+        f"\U0001f4b5 <b>Current Price:</b> {fp(exit_price)}",
+        f"\U0001f4ca <b>PnL at Close:</b> {current_r:+.1f}R",
+        "\u2500" * 25,
+        f"\U0001f552 {_ist_now()}",
+    ]
+    return "\n".join(lines)

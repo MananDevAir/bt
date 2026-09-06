@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "save_signal", "get_open_signals", "get_last_signal",
     "update_status", "is_on_cooldown", "get_recent_signals",
+    "update_tg_msg_id",
 ]
 
 # Default cooldown: don't re-signal the same symbol+direction within this window
@@ -27,7 +28,8 @@ def save_signal(conn: sqlite3.Connection,
                 signal: Any, plan: Any | None,
                 narration: str, narration_source: str,
                 sent_ok: bool = False,
-                data_source: str = "") -> int:
+                data_source: str = "",
+                tg_msg_id: int | None = None) -> int:
     """Persist a signal to the database. Returns the signal ID.
 
     Args:
@@ -37,6 +39,7 @@ def save_signal(conn: sqlite3.Connection,
         narration_source: "hf:model" or "template"
         sent_ok: whether Telegram delivery succeeded
         data_source: which data provider was used
+        tg_msg_id: Telegram message_id if delivered
     """
     now_ms = int(time.time() * 1000)
 
@@ -87,6 +90,7 @@ def save_signal(conn: sqlite3.Connection,
         "sent_ok": 1 if sent_ok else 0,
         "data_source": data_source,
         "status": "open",
+        "tg_msg_id": tg_msg_id,
     }
 
     cols = ", ".join(row.keys())
@@ -99,6 +103,12 @@ def save_signal(conn: sqlite3.Connection,
     log.info("Saved signal #%s: %s %s %s (score=%+.1f)",
              str(signal_id), signal.symbol, dir_str, signal.label, signal.score)
     return int(signal_id) if signal_id is not None else 0
+
+
+def update_tg_msg_id(conn: sqlite3.Connection, signal_id: int, tg_msg_id: int) -> None:
+    """Update the Telegram message ID for an existing signal."""
+    conn.execute("UPDATE signals SET tg_msg_id = ? WHERE id = ?", (tg_msg_id, signal_id))
+    conn.commit()
 
 
 def get_open_signals(conn: sqlite3.Connection) -> list[dict]:

@@ -46,7 +46,8 @@ def _get_credentials() -> tuple[str, str]:
 def send_text(text: str, token: str | None = None,
               chat_id: str | None = None,
               parse_mode: str = "HTML",
-              silent: bool = False) -> dict | None:
+              silent: bool = False,
+              reply_to_message_id: int | None = None) -> dict | None:
     """Send a text message via Telegram Bot API.
 
     Args:
@@ -55,6 +56,7 @@ def send_text(text: str, token: str | None = None,
         chat_id: target chat (reads from env if None)
         parse_mode: "HTML" or "MarkdownV2"
         silent: if True, send without notification sound
+        reply_to_message_id: optional message ID to reply to directly
 
     Returns:
         Telegram API response dict, or None on failure.
@@ -77,6 +79,8 @@ def send_text(text: str, token: str | None = None,
     }
     if silent:
         payload["disable_notification"] = True
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
 
     last_error: Exception | None = None
     for attempt in range(3):
@@ -125,7 +129,8 @@ def send_message_with_buttons(text: str,
                                buttons: list[list[dict]],
                                token: str | None = None,
                                chat_id: str | None = None,
-                               parse_mode: str = "HTML") -> dict | None:
+                               parse_mode: str = "HTML",
+                               reply_to_message_id: int | None = None) -> dict | None:
     """Send a text message with an InlineKeyboardMarkup.
 
     Args:
@@ -135,6 +140,7 @@ def send_message_with_buttons(text: str,
         token:    bot token (reads from env if None)
         chat_id:  target chat (reads from env if None)
         parse_mode: "HTML" or "MarkdownV2"
+        reply_to_message_id: optional message ID to reply to directly
 
     Returns:
         Telegram API response dict, or None on failure.
@@ -156,6 +162,8 @@ def send_message_with_buttons(text: str,
         "disable_web_page_preview": True,
         "reply_markup": {"inline_keyboard": buttons},
     }
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
 
     last_error: Exception | None = None
     for attempt in range(3):
@@ -211,7 +219,8 @@ def answer_callback_query(callback_query_id: str,
 
 def send_signal(signal: Any, plan: Any | None,
                 narration: str, narration_source: str,
-                cfg: Config) -> bool:
+                cfg: Config,
+                return_msg_id: bool = False) -> bool | tuple[bool, int | None]:
     """Format and send a signal alert to Telegram.
 
     Args:
@@ -220,9 +229,11 @@ def send_signal(signal: Any, plan: Any | None,
         narration: explanation text
         narration_source: "hf:model" or "template"
         cfg: bot configuration
+        return_msg_id: if True, returns (sent_ok, message_id)
 
     Returns:
         True if sent successfully (or dry_run), False otherwise.
+        If return_msg_id=True, returns (bool, int | None).
     """
     # Build the message
     msg = format_signal(signal, plan, narration, narration_source)
@@ -241,16 +252,23 @@ def send_signal(signal: Any, plan: Any | None,
         for line in clean.split("\n"):
             print(f"  {line}")
         print("  ---")
+        if return_msg_id:
+            return True, None
         return True
 
     # Send for real
     result = send_text(msg)
     if result:
-        log.info("Signal sent: %s %s (score=%+.1f)",
-                 signal.symbol, signal.label, signal.score)
+        msg_id = result.get("result", {}).get("message_id")
+        log.info("Signal sent: %s %s (score=%+.1f, msg_id=%s)",
+                 signal.symbol, signal.label, signal.score, msg_id)
+        if return_msg_id:
+            return True, int(msg_id) if msg_id is not None else None
         return True
     else:
         log.error("Failed to send signal for %s", signal.symbol)
+        if return_msg_id:
+            return False, None
         return False
 
 
@@ -818,18 +836,59 @@ def handle_command_with_buttons(command: str, cfg: Config,
         text = "🔍 <b>Select a symbol to analyse:</b>"
         sym_btns = [_sym_btn(n, "/check") for n in sym_names]
         buttons = _chunk(sym_btns, 3)
+        buttons.append([{"text": "« Main Menu", "callback_data": "/help"},
+                        {"text": "🔄 Refresh", "callback_data": "/check"}])
         result = send_message_with_buttons(text, buttons,
                                            token=token, chat_id=chat_id)
         return result is not None
+
+    # ── /check <sym> → with quick action buttons ───────────────────
+    if cmd in ("/check", "/scan") and len(command.strip().split()) >= 2:
+        response = handle_command(command, cfg, conn=conn,
+                                  symbols_status=symbols_status)
+        if response:
+            raw_sym = command.strip().split()[1]
+            sym_obj = _resolve_symbol_alias(raw_sym, cfg)
+            sym_name = sym_obj.name if sym_obj else raw_sym.upper()
+            quick_btns = [
+                [{"text": f"⚡ {sym_name} Levels", "callback_data": f"/levels {sym_name}"},
+                 {"text": f"🔇 Mute 4h", "callback_data": f"/mute {sym_name} 4"}],
+                [{"text": "🔍 Check Another", "callback_data": "/check"},
+                 {"text": "« Main Menu", "callback_data": "/help"}],
+            ]
+            result = send_message_with_buttons(response, quick_btns,
+                                               token=token, chat_id=chat_id)
+            return result is not None
+        return False
 
     # ── /levels with no args → symbol picker ────────────────────────
     if cmd == "/levels" and len(command.strip().split()) < 2:
         text = "⚡ <b>Select a symbol for Technical Levels:</b>"
         sym_btns = [_sym_btn(n, "/levels") for n in sym_names]
         buttons = _chunk(sym_btns, 3)
+        buttons.append([{"text": "« Main Menu", "callback_data": "/help"},
+                        {"text": "🔄 Refresh", "callback_data": "/levels"}])
         result = send_message_with_buttons(text, buttons,
                                            token=token, chat_id=chat_id)
         return result is not None
+
+    # ── /levels <sym> → with quick action buttons ───────────────────
+    if cmd == "/levels" and len(command.strip().split()) >= 2:
+        response = handle_command(command, cfg, conn=conn,
+                                  symbols_status=symbols_status)
+        if response:
+            raw_sym = command.strip().split()[1]
+            sym_obj = _resolve_symbol_alias(raw_sym, cfg)
+            sym_name = sym_obj.name if sym_obj else raw_sym.upper()
+            quick_btns = [
+                [{"text": f"🔍 {sym_name} Analysis", "callback_data": f"/check {sym_name}"}],
+                [{"text": "⚡ Check Another", "callback_data": "/levels"},
+                 {"text": "« Main Menu", "callback_data": "/help"}],
+            ]
+            result = send_message_with_buttons(response, quick_btns,
+                                               token=token, chat_id=chat_id)
+            return result is not None
+        return False
 
     # ── /status → score table + per-symbol drill-down buttons ────────
     if cmd == "/status":
@@ -839,18 +898,42 @@ def handle_command_with_buttons(command: str, cfg: Config,
             sym_btns = [{"text": f"🔍 {n.replace('USDT','').replace('USD','')}",
                          "callback_data": f"/check {n}"} for n in sym_names]
             buttons = _chunk(sym_btns, 3)
-            buttons.append([{"text": "🔄 Refresh Status", "callback_data": "/status"}])
+            buttons.append([{"text": "« Main Menu", "callback_data": "/help"},
+                            {"text": "🔄 Refresh Status", "callback_data": "/status"}])
             result = send_message_with_buttons(response, buttons,
                                                token=token, chat_id=chat_id)
             return result is not None
         return False
 
-    # ── All other commands → plain text ──────────────────────────────
+    # ── /mutes → with 1-tap unmute buttons ──────────────────────────
+    if cmd == "/mutes":
+        response = handle_command(command, cfg, conn=conn,
+                                  symbols_status=symbols_status)
+        if response:
+            buttons = []
+            if conn:
+                try:
+                    now_ms = int(time.time() * 1000)
+                    rows = conn.execute("SELECT symbol FROM mutes WHERE until_ts > ?", (now_ms,)).fetchall()
+                    for r in rows:
+                        s_name = r["symbol"]
+                        buttons.append([{"text": f"🔊 Unmute {s_name}", "callback_data": f"/unmute {s_name}"}])
+                except Exception:
+                    pass
+            buttons.append([{"text": "« Main Menu", "callback_data": "/help"}])
+            result = send_message_with_buttons(response, buttons,
+                                               token=token, chat_id=chat_id)
+            return result is not None
+        return False
+
+    # ── All other commands → text with Main Menu button ─────────────
     response = handle_command(command, cfg, conn=conn,
                               symbols_status=symbols_status)
     if response:
-        send_text(response, token=token, chat_id=chat_id)
-        return True
+        buttons = [[{"text": "« Main Menu", "callback_data": "/help"}]]
+        result = send_message_with_buttons(response, buttons,
+                                           token=token, chat_id=chat_id)
+        return result is not None
     return False
 
 

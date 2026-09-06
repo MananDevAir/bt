@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS signals (
     narration_source TEXT,
     sent_ok     INTEGER NOT NULL DEFAULT 0,
     data_source TEXT,                     -- which source provided the candles
-    status      TEXT NOT NULL DEFAULT 'open'  -- open | won | lost | expired | invalidated
+    status      TEXT NOT NULL DEFAULT 'open', -- open | won | lost | expired | invalidated
+    tg_msg_id   INTEGER                   -- Telegram message_id for reply threading
 );
 CREATE INDEX IF NOT EXISTS idx_signals_symbol_ts ON signals(symbol, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status);
@@ -100,5 +101,15 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA)
+
+    # Auto-migration for tg_msg_id column in existing databases
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(signals)").fetchall()]
+        if "tg_msg_id" not in cols:
+            conn.execute("ALTER TABLE signals ADD COLUMN tg_msg_id INTEGER")
+            conn.commit()
+    except Exception:
+        pass
+
     conn.commit()
     return conn

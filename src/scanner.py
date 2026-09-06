@@ -239,14 +239,14 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
             narration, narr_source = explain(signal, plan, cfg)
 
             # Send alert
-            sent_ok = send_signal(signal, plan, narration, narr_source, cfg)
+            sent_ok, tg_msg_id = send_signal(signal, plan, narration, narr_source, cfg, return_msg_id=True)
             if sent_ok:
                 summary["signals_sent"] += 1
 
             # Save to DB
             signal_id = sig_store.save_signal(
                 conn, signal, plan, narration, narr_source,
-                sent_ok=sent_ok, data_source=res.source,
+                sent_ok=sent_ok, data_source=res.source, tg_msg_id=tg_msg_id,
             )
 
             # JSONL log

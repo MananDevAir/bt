@@ -166,10 +166,11 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
                 try:
                     result = cleanup(conn, data_dir, execute=True)
                     last_maintenance = today
-                    if result["candles_deleted"] > 0:
-                        log.info("Maintenance: cleaned %d candles, %d signals",
-                                 result["candles_deleted"],
-                                 result["signals_archived"])
+                    mutes_exp = result.get("mutes_expired", 0)
+                    api_clean = result.get("api_usage_cleaned", 0)
+                    if mutes_exp > 0 or api_clean > 0:
+                        log.info("Maintenance: expired %d mutes, cleaned %d api usage records",
+                                 mutes_exp, api_clean)
                 except Exception as exc:
                     log.error("Maintenance failed: %s", exc)
 

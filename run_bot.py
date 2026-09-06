@@ -136,7 +136,9 @@ def _git_commit_push(db_path):
             
             pushed = False
             for attempt in range(3):
-                subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=False)
+                pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True, text=True)
+                if pull_res.returncode != 0:
+                    subprocess.run(["git", "rebase", "--abort"], check=False)
                 push_res = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
                 if push_res.returncode == 0:
                     _log.info("Database state successfully pushed to GitHub.")
