@@ -88,10 +88,10 @@ def format_signal(signal: Any, plan: Any | None,
 
     # Trade type emoji mapping
     type_emoji = {
-        "Intraday": "\u23f1",      # ⏱
-        "Swing": "\U0001f504",     # 🔄
-        "Short-term": "\U0001f4c5", # 📅
+        "Intraday": "\u23f1",       # ⏱
+        "Swing": "\U0001f504",      # 🔄
         "Positional": "\U0001f4c8", # 📈
+        "Short-term": "\U0001f4c5", # 📅
     }
 
     # Grade badge
@@ -113,13 +113,13 @@ def format_signal(signal: Any, plan: Any | None,
     if plan and plan.trade_type:
         te = type_emoji.get(plan.trade_type, "\U0001f4cb")
         type_desc = {
-            "Intraday": "close within hours",
-            "Swing": "hold hours to 1-2 days",
-            "Short-term": "hold 1-5 days",
-            "Positional": "hold days to weeks",
+            "Intraday": "Hold: 2 to 8 hours (Day Trade)",
+            "Swing": "Hold: 1 to 3 days (Swing Trade)",
+            "Positional": "Hold: Days to Weeks (Position Trade)",
+            "Short-term": "Hold: 1 to 5 days",
         }
-        desc = type_desc.get(plan.trade_type, "")
-        lines.append(f"{te} <b>Type: {plan.trade_type}</b>  \u2014  {desc}")
+        desc = type_desc.get(plan.trade_type, getattr(plan, "holding_horizon", ""))
+        lines.append(f"{te} <b>Type: {plan.trade_type.upper()}</b>  \u2014  <i>{desc}</i>")
     lines.append("")
 
     # ── Session / Killzone ──────────────────────────
@@ -157,7 +157,8 @@ def format_signal(signal: Any, plan: Any | None,
     # ── Trade Plan ──────────────────────────────────
     if plan:
         lines.append("\u2500" * 25)
-        lines.append(f"\U0001f3af <b>TRADE PLAN</b>  ({dir_word})")
+        trade_lane_tag = f" \u2022 {plan.trade_type.upper()}" if plan.trade_type else ""
+        lines.append(f"\U0001f3af <b>TRADE PLAN</b>  ({dir_word}{trade_lane_tag})")
         lines.append("")
         lines.append(f"  Entry     {fp(plan.entry_low)} \u2013 {fp(plan.entry_high)}")
         lines.append(f"  Stop       {fp(plan.sl)}")
@@ -165,7 +166,8 @@ def format_signal(signal: Any, plan: Any | None,
         lines.append(f"  TP2        {fp(plan.tp2)}  ({plan.tp_allocation[1]}%)")
         lines.append(f"  TP3        {fp(plan.tp3)}  ({plan.tp_allocation[2]}%)")
         lines.append("")
-        lines.append(f"  R:R  <b>{plan.rr:.1f}</b>  |  Risk  {plan.risk_pct:.1f}%")
+        risk_atr_str = f" ({plan.risk_atr:.1f} ATR)" if hasattr(plan, "risk_atr") and plan.risk_atr > 0 else ""
+        lines.append(f"  R:R  <b>{plan.rr:.1f}</b>  |  Risk  {plan.risk_pct:.1f}%{risk_atr_str}")
 
         # Position sizing guide (1% risk on $10k reference equity)
         risk_dist = abs(plan.entry_mid - plan.sl)
@@ -179,12 +181,15 @@ def format_signal(signal: Any, plan: Any | None,
                 pips = risk_dist / 0.01
                 lots = risk_usd / (pips * 9.0) if pips > 0 else 0
                 lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{lots:.2f} lots</b> ({pips:.1f} pips)")
-            elif sym in ("BTC", "ETH"):
+            elif sym in ("BTC", "ETH", "SOL", "ZEC"):
                 units = risk_usd / risk_dist
                 lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{units:.3f} {sym}</b>")
             elif sym in ("XAUUSDT",):
                 oz = risk_usd / risk_dist
                 lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{oz:.2f} oz</b>")
+            elif sym in ("US100", "US500", "US30"):
+                contracts = risk_usd / risk_dist
+                lines.append(f"  \U0001f4bc Size (1% on $10k): <b>{contracts:.2f} contracts</b> ({risk_dist:.1f} pts)")
 
         lines.append("\u2500" * 25)
         lines.append("")

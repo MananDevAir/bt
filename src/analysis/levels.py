@@ -149,12 +149,19 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     risk_pct = 100.0 * risk / entry_mid if entry_mid > 0 else 0
     risk_atr_units = risk / atr_val if atr_val > 0 else 0
 
-    # Holding horizon based on LTF
+    # Holding horizon and trade type classification
     horizon_map = {"15m": "hours", "1h": "1-2 days", "4h": "2-5 days", "1d": "1-2 weeks"}
-    horizon = horizon_map.get(ltf, "unknown")
+    raw_horizon = horizon_map.get(ltf, "hours")
+    trade_type = _classify_trade_type(signal, raw_horizon)
 
-    # Trade type classification
-    trade_type = _classify_trade_type(signal, horizon)
+    if trade_type == "Intraday":
+        horizon = "2 - 8 hours (Day Trade)"
+    elif trade_type == "Swing":
+        horizon = "1 - 3 days (Swing Trade)"
+    elif trade_type == "Positional":
+        horizon = "Days to Weeks (Position Trade)"
+    else:
+        horizon = raw_horizon
 
     # Brief reason: why this signal was captured
     brief = _build_brief_reason(signal, direction, source)
@@ -417,10 +424,10 @@ def _decimals(price: float) -> int:
 # =========================================================================== #
 # Trade type classification
 # =========================================================================== #
-def _classify_trade_type(signal: 'SignalResult', horizon: str) -> str:
+def _classify_trade_type(signal: 'SignalResult', horizon: str = "") -> str:
     """Classify the trade type based on timeframe dominance and score.
 
-    Returns one of: Intraday, Swing, Short-term, Positional
+    Returns one of: Intraday, Swing, Positional
     """
     # Calculate which timeframes contributed most to the score
     tf_strength: dict[str, float] = {}
@@ -435,22 +442,19 @@ def _classify_trade_type(signal: 'SignalResult', horizon: str) -> str:
     macro_htf = (sum(tf_strength[tf] for tf in macro_tfs) / len(macro_tfs)) if macro_tfs else 0.0
     mtf_tfs = [tf for tf in ("4h", "1h") if tf in tf_strength]
     mtf = (sum(tf_strength[tf] for tf in mtf_tfs) / len(mtf_tfs)) if mtf_tfs else 0.0
-    ltf = tf_strength.get("15m", 0)
+    ltf_val = tf_strength.get("15m", 0.0)
 
     score_abs = abs(signal.score)
 
-    # Strong signal across all timeframes with weekly/daily alignment
+    # 1. Strong signal across all timeframes with weekly/daily alignment -> Positional (Macro)
     if score_abs >= 40 and macro_htf > mtf:
         return "Positional"  # days to weeks
-    # Daily/4h alignment with good score
-    elif score_abs >= 30 and macro_htf >= 0.5:
-        return "Short-term"  # 1-5 days
-    # 4h/1h structure with 15m trigger
-    elif mtf > ltf and horizon in ("hours", "1-2 days"):
-        return "Swing"  # hours to 2 days
-    # Primarily 15m/1h driven
+    # 2. 4h/1h structure dominance or multi-day alignment -> Swing
+    elif (score_abs >= 25 and (mtf >= ltf_val or macro_htf >= 0.4)) or horizon in ("1-2 days", "2-5 days", "1-2 weeks"):
+        return "Swing"  # 1-3 days
+    # 3. Primarily 15m/1h momentum & fast structure -> Intraday
     else:
-        return "Intraday"  # hours
+        return "Intraday"  # 2-8 hours
 
 
 def _build_brief_reason(signal: 'SignalResult', direction: int,

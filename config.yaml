@@ -29,6 +29,16 @@ symbols:
     fallback: {source: hyperliquid, ticker: "ETH"}
     session: always
 
+  - name: SOL
+    primary:  {source: binance,     ticker: "SOL/USDT"}
+    fallback: {source: hyperliquid, ticker: "SOL"}
+    session: always
+
+  - name: ZEC
+    primary:  {source: binance,     ticker: "ZEC/USDT"}
+    fallback: {source: hyperliquid, ticker: "ZEC"}
+    session: always
+
   - name: XAUUSDT
     primary:  {source: binance,     ticker: "XAUT/USDT"}
     fallback: {source: hyperliquid, ticker: "PAXG"}
@@ -112,8 +122,8 @@ risk:
 
 llm:
   provider: huggingface
-  model: "Qwen/Qwen3-8B-Instruct"
-  fallback_model: "meta-llama/Llama-3.1-8B-Instruct"
+  model: "meta-llama/Llama-3.1-8B-Instruct"
+  fallback_model: "Qwen/Qwen2.5-7B-Instruct"
   enabled: true
   daily_cap: 100
   timeout_s: 12

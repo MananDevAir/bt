@@ -187,15 +187,22 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             log.info("Signal #%d expired after %.1f days (%.1fR)", signal_id, max_age_days, current_r)
             continue
 
-        # Check SL hit
-        sl_hit_long = direction > 0 and low <= sl
-        sl_hit_short = direction < 0 and high >= sl
+        # Check if TP2 or TP1 was already hit to determine active trailing SL
+        tp2_was_hit = outcome.get("tp2_hit_ts") if outcome else None
+        tp1_was_hit = outcome.get("tp1_hit_ts") if outcome else None
+
+        if tp2_was_hit and tp1 is not None:
+            active_sl = tp1  # trailed to TP1 level
+        elif tp1_was_hit:
+            active_sl = entry_mid  # trailed to breakeven
+        else:
+            active_sl = sl
+
+        # Check SL hit against active_sl
+        sl_hit_long = direction > 0 and low <= active_sl
+        sl_hit_short = direction < 0 and high >= active_sl
         
         if sl_hit_long or sl_hit_short:
-            # Check if TP2 or TP1 was already hit
-            tp2_was_hit = outcome.get("tp2_hit_ts") if outcome else None
-            tp1_was_hit = outcome.get("tp1_hit_ts") if outcome else None
-
             if tp2_was_hit:
                 # TP2 was hit, SL was trailed to TP1 — this is a solid win
                 sig_store.update_status(conn, signal_id, "won")
@@ -285,11 +292,6 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
             elif tp_hit == "tp2" and not tp2_already:
                 # TP2 hit for the first time — trail SL to TP1 level and keep tracking for TP3
-                if tp1:
-                    conn.execute(
-                        "UPDATE signals SET sl = ? WHERE id = ?",
-                        (tp1, signal_id)
-                    )
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
                 tp_msg = format_tp_update(sig, "tp2", "2.0", price,
@@ -303,10 +305,6 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
             elif tp_hit == "tp1" and not tp1_already:
                 # TP1 hit for the first time — move SL to breakeven
-                conn.execute(
-                    "UPDATE signals SET sl = ? WHERE id = ?",
-                    (entry_mid, signal_id)
-                )
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
                 tp_msg = format_tp_update(sig, "tp1", "1.0", price,
