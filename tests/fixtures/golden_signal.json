@@ -15,15 +15,15 @@
   "label": "NEUTRAL",
   "max_possible": 1200.0,
   "plan": null,
-  "raw_score": 212.294095,
+  "raw_score": 212.160762,
   "score": 17.7,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
       "regime": "normal",
       "structure_bias": "bearish",
-      "vote_count": 31,
-      "vote_sum": 6.65,
+      "vote_count": 32,
+      "vote_sum": 7.15,
       "votes": [
         {
           "category": "momentum",
@@ -168,6 +168,12 @@
           "detail": "OBV above EMA (accumulation)",
           "name": "obv_slope",
           "value": 0.7
+        },
+        {
+          "category": "volume",
+          "detail": "volume expansion (1.4x avg, bull)",
+          "name": "vol_spike",
+          "value": 0.5
         },
         {
           "category": "volume",

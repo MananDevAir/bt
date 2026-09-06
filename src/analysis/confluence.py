@@ -416,7 +416,7 @@ def _zone_votes(pa_data: dict, smc_data: dict, close: float,
 
 
 def _volume_votes(last: pd.Series, vp, mi_last: pd.Series,
-                  close: float) -> list[Vote]:
+                  close: float, open_price: float = 0.0) -> list[Vote]:
     """Volume category: OBV slope, MFI, volume vs average, POC relation."""
     votes: list[Vote] = []
 
@@ -428,15 +428,18 @@ def _volume_votes(last: pd.Series, vp, mi_last: pd.Series,
         else:
             votes.append(Vote("obv_slope", "volume", -0.7, "OBV below EMA (distribution)"))
 
-    # Volume ratio & Climax
+    # Volume ratio & Climax — directional confirmation from candle close vs open
     vol_ratio = last.get("vol_ratio", np.nan)
     if not np.isnan(vol_ratio):
+        candle_dir = 1.0 if (open_price > 0 and close >= open_price) else (1.0 if close >= last.get("ema20", close) else -1.0)
         if vol_ratio > 2.5:
-            votes.append(Vote("vol_climax", "volume", +0.7, f"ultra-high volume climax ({vol_ratio:.1f}x avg)"))
-        elif vol_ratio > 1.5:
-            votes.append(Vote("vol_spike", "volume", +0.5, f"volume {vol_ratio:.1f}x avg"))
+            votes.append(Vote("vol_climax", "volume", 0.7 * candle_dir,
+                              f"ultra-high volume climax ({vol_ratio:.1f}x avg, {'bull' if candle_dir > 0 else 'bear'})"))
+        elif vol_ratio > 1.3:
+            votes.append(Vote("vol_spike", "volume", 0.5 * candle_dir,
+                              f"volume expansion ({vol_ratio:.1f}x avg, {'bull' if candle_dir > 0 else 'bear'})"))
         elif vol_ratio < 0.5:
-            votes.append(Vote("vol_spike", "volume", -0.3, "low volume"))
+            votes.append(Vote("vol_spike", "volume", 0.0, "low volume (compression)"))
 
     # Volume Profile POC relation
     if vp is not None:
@@ -484,6 +487,7 @@ def _compute_tf(df: pd.DataFrame, tf: str) -> TFResult:
     divs = divergences(df)
 
     close = float(df["close"].iloc[-1])
+    open_price = float(df["open"].iloc[-1]) if "open" in df.columns else 0.0
     atr_val = float(last["atr"]) if not np.isnan(last["atr"]) else 0
 
     # Collect all votes
@@ -491,7 +495,7 @@ def _compute_tf(df: pd.DataFrame, tf: str) -> TFResult:
     result.votes.extend(_structure_votes(smc, close))
     result.votes.extend(_momentum_votes(last, mlast, divs))
     result.votes.extend(_zone_votes(pa, smc, close, atr_val))
-    result.votes.extend(_volume_votes(last, vp, mlast, close))
+    result.votes.extend(_volume_votes(last, vp, mlast, close, open_price))
 
     return result
 
