@@ -25,6 +25,8 @@ _TIMEOUT = 8
 _BINANCE_MAP: dict[str, str] = {
     "BTC": "BTCUSDT",
     "ETH": "ETHUSDT",
+    "SOL": "SOLUSDT",
+    "ZEC": "ZECUSDT",
     # XAUUSDT: Binance does not have gold spot. Falls through to Hyperliquid PAXG.
 }
 
@@ -35,18 +37,23 @@ _HYPERLIQUID_MAP: dict[str, str] = {
     "EURUSD": "xyz:EUR",
     "BTC": "BTC",
     "ETH": "ETH",
+    "SOL": "SOL",
+    "ZEC": "ZEC",
     "XAUUSDT": "PAXG",
 }
 
+
 # Symbol → Yahoo Finance ticker mapping (fallback)
 _YAHOO_MAP: dict[str, str] = {
-    "US100": "^NDX",
-    "US500": "^GSPC",
-    "US30": "^DJI",
+    "US100": "NQ=F",
+    "US500": "ES=F",
+    "US30": "YM=F",
+    "XAUUSDT": "GC=F",
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
     "USDJPY": "USDJPY=X",
 }
+
 
 
 def get_live_price(symbol: str) -> dict[str, float] | None:
@@ -125,30 +132,35 @@ def _fetch_hyperliquid(ticker: str) -> dict[str, float] | None:
 
 
 def _fetch_binance(ticker: str) -> dict[str, float] | None:
-    """Fetch the latest 15m kline from Binance (free, no key)."""
-    url = "https://api.binance.com/api/v3/klines"
+    """Fetch the latest 15m kline from Binance Futures / Spot (free, no key)."""
+    endpoints = [
+        "https://fapi.binance.com/fapi/v1/klines",  # Binance USDT-M Perpetual Futures
+        "https://api.binance.com/api/v3/klines",     # Binance Spot fallback
+    ]
     params = {
         "symbol": ticker,
         "interval": "15m",
         "limit": 2,  # Get last 2 candles (second-to-last is the closed one)
     }
-    try:
-        resp = requests.get(url, params=params, timeout=_TIMEOUT)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        if not data or len(data) < 2:
-            return None
-        # Use the second-to-last candle (most recently closed)
-        candle = data[-2]
-        return {
-            "high": float(candle[2]),
-            "low": float(candle[3]),
-            "close": float(candle[4]),
-        }
-    except Exception as exc:
-        log.debug("Binance fetch failed for %s: %s", ticker, exc)
-        return None
+    for url in endpoints:
+        try:
+            resp = requests.get(url, params=params, timeout=_TIMEOUT)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            if not data or len(data) < 2:
+                continue
+            # Use the second-to-last candle (most recently closed)
+            candle = data[-2]
+            return {
+                "high": float(candle[2]),
+                "low": float(candle[3]),
+                "close": float(candle[4]),
+            }
+        except Exception as exc:
+            log.debug("Binance fetch failed for %s on %s: %s", ticker, url, exc)
+    return None
+
 
 
 def _fetch_yahoo(ticker: str) -> dict[str, float] | None:

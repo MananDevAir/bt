@@ -113,3 +113,25 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
 
     conn.commit()
     return conn
+
+
+def flush_wal(conn: sqlite3.Connection) -> None:
+    """Flush all WAL frames into the main database file (ACID checkpoint)."""
+    try:
+        conn.commit()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    except Exception:
+        pass
+
+
+def checkpoint_and_close(conn: sqlite3.Connection) -> None:
+    """Flush WAL journal completely and close connection cleanly."""
+    try:
+        flush_wal(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+

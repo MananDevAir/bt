@@ -46,18 +46,19 @@ symbols:
 
   - name: US100
     primary:  {source: hyperliquid, ticker: "xyz:XYZ100"}
-    fallback: {source: yfinance,    ticker: "^NDX"}
+    fallback: {source: yfinance,    ticker: "NQ=F"}
     session: fx_week
 
   - name: US500
     primary:  {source: hyperliquid, ticker: "xyz:SP500"}
-    fallback: {source: yfinance,    ticker: "^GSPC"}
+    fallback: {source: yfinance,    ticker: "ES=F"}
     session: fx_week
 
   - name: US30
-    primary:  {source: yfinance,    ticker: "^DJI"}
+    primary:  {source: yfinance,    ticker: "YM=F"}
     fallback: {source: twelvedata,  ticker: "DJI"}
-    session: us_cash
+    session: fx_week
+
 
   - name: EURUSD
     primary:  {source: hyperliquid, ticker: "xyz:EUR"}

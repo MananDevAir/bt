@@ -120,12 +120,21 @@ def cmd_status(cfg, conn):
     print()
 
 
-def _git_commit_push(db_path):
-    """Commit and push database updates to GitHub repository with retry backoff."""
+def _git_commit_push(db_path, conn=None):
+    """Commit and push database updates to GitHub repository with retry backoff and conflict resolution."""
     import subprocess
     import logging
     import time
     _log = logging.getLogger(__name__)
+
+    # 1. Flush SQLite WAL frames into main database file (ACID persistence)
+    if conn is not None:
+        try:
+            from src.store.db import flush_wal
+            flush_wal(conn)
+        except Exception as exc:
+            _log.debug("WAL flush before git commit: %s", exc)
+
     try:
         subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"], check=False)
         subprocess.run(["git", "config", "--global", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
@@ -138,7 +147,11 @@ def _git_commit_push(db_path):
             for attempt in range(3):
                 pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True, text=True)
                 if pull_res.returncode != 0:
-                    subprocess.run(["git", "rebase", "--abort"], check=False)
+                    # Auto-resolve binary SQLite conflict by taking latest local committed state
+                    subprocess.run(["git", "checkout", "--theirs", str(db_path)], check=False)
+                    subprocess.run(["git", "add", str(db_path)], check=False)
+                    subprocess.run(["git", "-c", "core.editor=true", "rebase", "--continue"], check=False)
+
                 push_res = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
                 if push_res.returncode == 0:
                     _log.info("Database state successfully pushed to GitHub.")
@@ -151,6 +164,7 @@ def _git_commit_push(db_path):
                 _log.warning("Git push failed after 3 attempts.")
     except Exception as exc:
         _log.warning("Git commit/push error: %s", exc)
+
 
 
 def _trigger_next_relay():
@@ -276,7 +290,7 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
         except Exception as exc:
             _log.debug("Maintenance cleanup error: %s", exc)
 
-        _git_commit_push(cfg.db_path)
+        _git_commit_push(cfg.db_path, conn=conn)
 
         # 7. Responsive wait until next 15-minute mark (polls Telegram every 5s)
         elapsed = time.time() - loop_start
@@ -422,8 +436,10 @@ def main():
         else:
             cmd_loop(cfg, conn, live=args.live)
     finally:
-        conn.close()
+        from src.store.db import checkpoint_and_close
+        checkpoint_and_close(conn)
 
 
 if __name__ == "__main__":
     main()
+

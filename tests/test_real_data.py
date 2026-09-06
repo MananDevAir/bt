@@ -225,7 +225,7 @@ def test_real_plans_are_coherent(symbol, loose):
     assert 0 < plan.risk_atr <= limit
     assert sum(plan.tp_allocation) == 100
     assert plan.risk_pct > 0
-    assert plan.source in {"order_block", "fvg", "fib_ote", "market"}
+    assert plan.source in {"order_block", "fvg", "fib_ote", "bos_retest", "market"}
 
 
 def test_most_real_symbols_actually_produce_a_plan(real_plans):

@@ -15,10 +15,12 @@ import time
 import pandas as pd
 import requests
 
-BASE_URLS = (
-    "https://api.binance.com",
-    "https://api1.binance.com",
-    "https://api-gcp.binance.com",
+# Priority: Binance USDT-M Perpetual Futures first, then Binance Spot fallbacks
+BASE_ENDPOINTS = (
+    ("https://fapi.binance.com", "/fapi/v1/klines"),  # USDT-M Perpetual Futures (Direct Deriv Feed)
+    ("https://api.binance.com", "/api/v3/klines"),    # Binance Spot
+    ("https://api1.binance.com", "/api/v3/klines"),
+    ("https://api-gcp.binance.com", "/api/v3/klines"),
 )
 MAX_LIMIT = 1000
 TIMEOUT = 20
@@ -42,11 +44,11 @@ def fetch(ticker: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
     params = {"symbol": symbol, "interval": timeframe, "limit": want}
 
     last_error: Exception | None = None
-    for base in BASE_URLS:
-        for attempt in range(3):
+    for base, path in BASE_ENDPOINTS:
+        for attempt in range(2):
             try:
                 resp = requests.get(
-                    f"{base}/api/v3/klines", params=params, timeout=TIMEOUT
+                    f"{base}{path}", params=params, timeout=TIMEOUT
                 )
                 if resp.status_code == 429:
                     time.sleep(2 ** attempt)
@@ -55,8 +57,9 @@ def fetch(ticker: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
                 return _to_frame(resp.json())
             except Exception as exc:  # network, HTTP, or parse
                 last_error = exc
-                time.sleep(0.5 * (attempt + 1))
-    raise FetchError(f"binance fetch failed for {ticker} {timeframe}: {last_error}")
+                time.sleep(0.3 * (attempt + 1))
+    raise FetchError(f"binance futures/spot fetch failed for {ticker} {timeframe}: {last_error}")
+
 
 
 def _to_frame(raw: list) -> pd.DataFrame:
