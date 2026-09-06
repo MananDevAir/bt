@@ -25,7 +25,7 @@ _TIMEOUT = 8
 _BINANCE_MAP: dict[str, str] = {
     "BTC": "BTCUSDT",
     "ETH": "ETHUSDT",
-    "XAUUSDT": "XAUTUSDT",
+    # XAUUSDT: Binance does not have gold spot. Falls through to Hyperliquid PAXG.
 }
 
 # Symbol → Hyperliquid builder perps (real-time 24/7/365, zero delay)

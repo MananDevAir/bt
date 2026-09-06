@@ -269,6 +269,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                     f"UPDATE outcomes SET {tp_ts_col} = ? WHERE signal_id = ?",
                     (now_ms, signal_id)
                 )
+                conn.commit()  # persist TP timestamp immediately
 
             r_mult = {"tp1": "1.0", "tp2": "2.0", "tp3": "3.0"}.get(tp_hit, "?")
 
@@ -392,3 +393,4 @@ def _update_outcome(conn: sqlite3.Connection, signal_id: int,
     vals.append(signal_id)
     sql = f"UPDATE outcomes SET {', '.join(parts)} WHERE signal_id = ?"
     conn.execute(sql, vals)
+    conn.commit()

@@ -209,7 +209,6 @@ def answer_callback_query(callback_query_id: str,
         log.debug("answerCallbackQuery failed: %s", exc)
 
 
-
 def send_signal(signal: Any, plan: Any | None,
                 narration: str, narration_source: str,
                 cfg: Config) -> bool:
@@ -292,7 +291,6 @@ def _sym_btn(sym_name: str, callback_prefix: str) -> dict:
 def _chunk(lst: list, size: int) -> list[list]:
     """Split a flat list into rows of `size` items each."""
     return [lst[i:i + size] for i in range(0, len(lst), size)]
-
 
 
 def handle_command(command: str, cfg: Config,
