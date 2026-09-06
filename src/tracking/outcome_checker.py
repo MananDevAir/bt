@@ -68,7 +68,8 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         return {"checked": 0, "won": 0, "lost": 0, "expired": 0}
 
     now_ms = int(time.time() * 1000)
-    expiry_ms = DEFAULT_EXPIRY_H * 3600 * 1000
+    max_age_days = float(cfg.get("tracking", "max_signal_age_days", default=7) or 7)
+    expiry_ms = int(max_age_days * 86400 * 1000)
     summary = {"checked": 0, "won": 0, "lost": 0, "expired": 0, "still_open": 0}
     hit_alerts: list[tuple[str, int | None]] = []  # (formatted_message, reply_to_tg_msg_id)
 
@@ -77,17 +78,6 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         symbol = sig["symbol"]
         direction = 1 if sig["direction"] == "long" else -1
         tg_msg_id = sig.get("tg_msg_id")
-
-        # Check expiry
-        age_ms = now_ms - sig["ts"]
-        if age_ms > expiry_ms:
-            sig_store.update_status(conn, signal_id, "expired")
-            _update_outcome(conn, signal_id, "expired", now_ms)
-            if data_dir:
-                log_outcome(data_dir, signal_id, symbol, "expired")
-            summary["expired"] += 1
-            log.info("Signal #%d expired (%s)", signal_id, symbol)
-            continue
 
         # Get current price — prefer live API over stale cache
         candle = get_live_price(symbol)
@@ -144,6 +134,16 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                 log.info("Signal #%d entry filled at %.2f", signal_id, price)
 
         if not entry_filled:
+            age_ms = now_ms - sig["ts"]
+            if age_ms > max_age_days * 86400 * 1000:
+                sig_store.update_status(conn, signal_id, "expired")
+                _update_outcome(conn, signal_id, "expired_unfilled", now_ms, price=price)
+                if data_dir:
+                    log_outcome(data_dir, signal_id, symbol, "expired", hit="unfilled")
+                summary["expired"] += 1
+                log.info("Signal #%d expired unfilled after %.1f days (%s)", signal_id, max_age_days, symbol)
+                continue
+
             # Price hasn't reached entry zone yet
             summary["still_open"] += 1
             _update_outcome(conn, signal_id, "open", now_ms, price=price)
