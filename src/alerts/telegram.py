@@ -1,11 +1,16 @@
 """Telegram Bot API sender — delivers signal alerts and handles commands.
 
 Features:
-  - send_signal():   format + narrate + deliver a signal alert
-  - send_text():     send arbitrary text (status, reports)
-  - Retry logic:     3 attempts with backoff on 429/5xx
-  - dry_run mode:    logs the message without sending
-  - Bot commands:    /status, /watchlist, /last
+  - send_signal():               format + narrate + deliver a signal alert
+  - send_text():                 send arbitrary text (status, reports)
+  - send_message_with_buttons(): send text + InlineKeyboardMarkup
+  - answer_callback_query():     ack a button tap (clears spinner)
+  - Retry logic:                 3 attempts with backoff on 429/5xx
+  - dry_run mode:                logs the message without sending
+  - Bot commands:                /status, /check, /watchlist, /last, /help …
+  - Interactive buttons:         /help → menu grid, /check → symbol picker,
+                                 /status → per-symbol drill-down buttons,
+                                 /levels → symbol picker
 """
 from __future__ import annotations
 
@@ -21,7 +26,8 @@ from .formatter import format_signal, format_status, format_watchlist
 
 log = logging.getLogger(__name__)
 
-__all__ = ["send_signal", "send_text", "TelegramError"]
+__all__ = ["send_signal", "send_text", "send_message_with_buttons",
+           "answer_callback_query", "TelegramError"]
 
 API_BASE = "https://api.telegram.org/bot{token}"
 
@@ -115,6 +121,95 @@ def send_text(text: str, token: str | None = None,
     return None
 
 
+def send_message_with_buttons(text: str,
+                               buttons: list[list[dict]],
+                               token: str | None = None,
+                               chat_id: str | None = None,
+                               parse_mode: str = "HTML") -> dict | None:
+    """Send a text message with an InlineKeyboardMarkup.
+
+    Args:
+        text:     HTML message body
+        buttons:  2-D list of button dicts, e.g.
+                  [[{"text": "BTC", "callback_data": "/check BTC"}], …]
+        token:    bot token (reads from env if None)
+        chat_id:  target chat (reads from env if None)
+        parse_mode: "HTML" or "MarkdownV2"
+
+    Returns:
+        Telegram API response dict, or None on failure.
+    """
+    if not token or not chat_id:
+        env_token, env_chat = _get_credentials()
+        token = token or env_token
+        chat_id = chat_id or env_chat
+
+    if not token or not chat_id:
+        log.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
+        return None
+
+    url = f"{API_BASE.format(token=token)}/sendMessage"
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "disable_web_page_preview": True,
+        "reply_markup": {"inline_keyboard": buttons},
+    }
+
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=15)
+            data = resp.json()
+            if data.get("ok"):
+                log.info("Telegram button-message sent (%d rows)", len(buttons))
+                return data
+
+            error_code = data.get("error_code", 0)
+            description = data.get("description", "unknown error")
+            if error_code == 429:
+                time.sleep(data.get("parameters", {}).get("retry_after", 5))
+                continue
+            elif error_code >= 500:
+                time.sleep(2 ** (attempt + 1))
+                continue
+            else:
+                log.error("Telegram %d: %s", error_code, description)
+                return None
+        except Exception as exc:
+            log.error("Telegram button send error: %s", exc)
+            last_error = exc
+            time.sleep(2)
+
+    log.error("Telegram button send: all attempts failed. Last: %s", last_error)
+    return None
+
+
+def answer_callback_query(callback_query_id: str,
+                           token: str | None = None,
+                           text: str = "") -> None:
+    """Acknowledge a callback_query to clear Telegram's loading spinner.
+
+    Args:
+        callback_query_id: the id from the callback_query update
+        token:             bot token (reads from env if None)
+        text:              optional brief toast shown to user (≤200 chars)
+    """
+    if not token:
+        token, _ = _get_credentials()
+    if not token:
+        return
+
+    url = f"{API_BASE.format(token=token)}/answerCallbackQuery"
+    try:
+        requests.post(url, json={"callback_query_id": callback_query_id,
+                                 "text": text}, timeout=5)
+    except Exception as exc:
+        log.debug("answerCallbackQuery failed: %s", exc)
+
+
+
 def send_signal(signal: Any, plan: Any | None,
                 narration: str, narration_source: str,
                 cfg: Config) -> bool:
@@ -176,6 +271,28 @@ def _resolve_symbol_alias(raw_sym: str, cfg: Config) -> Any | None:
     }
     target = aliases.get(cleaned, cleaned)
     return next((s for s in cfg.symbols if s.name.upper() == target), None)
+
+
+# ── Emoji map for symbols — makes buttons feel premium ───────────────
+_SYMBOL_EMOJI: dict[str, str] = {
+    "BTC": "🟡", "ETH": "🔷", "XAUUSDT": "🥇",
+    "EURUSD": "💱", "GBPUSD": "💷", "USDJPY": "🇯🇵",
+    "US100": "📈", "US500": "📊", "US30": "🏛️",
+}
+
+
+def _sym_btn(sym_name: str, callback_prefix: str) -> dict:
+    """Build a single InlineKeyboardButton dict for a symbol."""
+    emoji = _SYMBOL_EMOJI.get(sym_name.upper(), "🔍")
+    short = sym_name.replace("USDT", "").replace("USD", "")
+    return {"text": f"{emoji} {short}",
+            "callback_data": f"{callback_prefix} {sym_name}"}
+
+
+def _chunk(lst: list, size: int) -> list[list]:
+    """Split a flat list into rows of `size` items each."""
+    return [lst[i:i + size] for i in range(0, len(lst), size)]
+
 
 
 def handle_command(command: str, cfg: Config,
@@ -252,27 +369,32 @@ def handle_command(command: str, cfg: Config,
             log.warning("Error in /report: %s", exc)
             return f"\u26a0 Error: {exc}"
 
-    elif cmd == "/help":
+    elif cmd in ("/help", "/start"):
+        # Plain-text fallback (interactive version sent by handle_command_with_buttons)
         return (
-            "<b>Signal Bot Commands</b>\n"
-            "/ping  \u2014  Instant bot heartbeat & latency check\n"
-            "/status  \u2014  Current market scores\n"
-            "/check &lt;sym&gt;  \u2014  Live real-time scan on demand (e.g. /check BTC, /check GOLD, /check NASDAQ)\n"
-            "/levels &lt;sym&gt;  \u2014  Live support, resistance & OBs\n"
-            "/last  \u2014  Last emitted signal\n"
-            "/report  \u2014  Today's performance\n"
-            "/watchlist  \u2014  Active symbols\n"
-            "/streak  \u2014  Win/loss streak status\n"
-            "/config  \u2014  Current settings\n"
-            "/mute &lt;sym&gt; [h]  \u2014  Temporarily mute an asset\n"
-            "/unmute &lt;sym&gt;  \u2014  Unmute an asset\n"
-            "/mutes  \u2014  List muted assets\n"
-            "/set &lt;key&gt; &lt;value&gt;  \u2014  Change a setting\n"
-            "/reset [key|all]  \u2014  Reset overrides to default\n"
-            "/help  \u2014  This message\n"
+            "<b>🤖 Signal Bot — Commands</b>\n"
             "\n"
-            "<b>Settable keys:</b>\n"
-            "  watch, cooldown, min_rr, max_stop_atr, risk_pct"
+            "<b>Market</b>\n"
+            "  /ping          — Heartbeat &amp; latency check\n"
+            "  /status        — Current market scores\n"
+            "  /check &lt;sym&gt; — Real-time on-demand scan\n"
+            "  /levels &lt;sym&gt; — Support, resistance &amp; order blocks\n"
+            "\n"
+            "<b>History</b>\n"
+            "  /last          — Last emitted signal\n"
+            "  /report        — Today's performance\n"
+            "  /streak        — Win/loss streak\n"
+            "  /watchlist     — Active symbols\n"
+            "\n"
+            "<b>Control</b>\n"
+            "  /mute &lt;sym&gt; [h] — Mute an asset (default 4h)\n"
+            "  /unmute &lt;sym&gt;   — Unmute an asset\n"
+            "  /mutes         — List muted assets\n"
+            "  /config        — Current settings\n"
+            "  /set &lt;key&gt; &lt;val&gt; — Change a setting\n"
+            "  /reset [key|all] — Reset to defaults\n"
+            "\n"
+            "<b>Settable keys:</b> watch, cooldown, min_rr, max_stop_atr, risk_pct"
         )
 
     elif cmd in ("/check", "/scan"):
@@ -281,8 +403,14 @@ def handle_command(command: str, cfg: Config,
         try:
             parts = command.strip().split()
             if len(parts) < 2:
-                symbols_str = ", ".join(s.name for s in cfg.symbols)
-                return f"\u26a0 Usage: /check &lt;symbol&gt;\nAvailable: {symbols_str}\n(Aliases accepted: GOLD, NASDAQ, SPX, DOW, BTCUSDT, etc.)"
+                # Button picker sent by handle_command_with_buttons; fall back gracefully here
+                symbols_str = " | ".join(s.name for s in cfg.symbols)
+                return (
+                    f"\U0001f50d <b>Check a Symbol</b>\n"
+                    f"Usage: <code>/check &lt;symbol&gt;</code>\n\n"
+                    f"Available: {symbols_str}\n"
+                    f"<i>Aliases: GOLD, NASDAQ, SPX, DOW, BTC, ETH …</i>"
+                )
 
             raw_input = parts[1]
             sym = _resolve_symbol_alias(raw_input, cfg)
@@ -368,8 +496,13 @@ def handle_command(command: str, cfg: Config,
         try:
             parts = command.strip().split()
             if len(parts) < 2:
-                symbols_str = ", ".join(s.name for s in cfg.symbols)
-                return f"\u26a0 Usage: /levels &lt;symbol&gt;\nAvailable: {symbols_str}"
+                # Button picker sent by handle_command_with_buttons; fall back gracefully here
+                symbols_str = " | ".join(s.name for s in cfg.symbols)
+                return (
+                    f"\u26a1 <b>Tech Levels</b>\n"
+                    f"Usage: <code>/levels &lt;symbol&gt;</code>\n\n"
+                    f"Available: {symbols_str}"
+                )
 
             raw_sym = parts[1]
             sym_obj = _resolve_symbol_alias(raw_sym, cfg)
@@ -635,6 +768,94 @@ def handle_command(command: str, cfg: Config,
     return None
 
 
+def handle_command_with_buttons(command: str, cfg: Config,
+                                 conn: Any = None,
+                                 symbols_status: list[dict] | None = None,
+                                 token: str | None = None,
+                                 chat_id: str | None = None) -> bool:
+    """Process a command and send the response with inline buttons where available.
+
+    Commands with button upgrades:
+      /help, /start → 5-row interactive command-centre grid
+      /check (no args) → 3-column symbol-picker grid
+      /levels (no args) → 3-column symbol-picker grid
+      /status → score table + per-symbol drill-down buttons + Refresh
+
+    All other commands fall back to handle_command() + send_text().
+
+    Returns True if a response was sent.
+    """
+    if not token or not chat_id:
+        env_token, env_chat = _get_credentials()
+        token = token or env_token
+        chat_id = chat_id or env_chat
+
+    cmd = command.strip().lower().split()[0] if command.strip() else ""
+    sym_names = [s.name for s in cfg.symbols]
+
+    # ── /help → interactive command-centre grid ──────────────────────
+    if cmd in ("/help", "/start"):
+        text = (
+            "🤖 <b>Signal Bot — Command Centre</b>\n"
+            "Tap a button or type any command manually:"
+        )
+        buttons = [
+            [{"text": "📊 Status",       "callback_data": "/status"},
+             {"text": "🔍 Check Symbol",  "callback_data": "/check"}],
+            [{"text": "📈 Last Signal",   "callback_data": "/last"},
+             {"text": "📋 Daily Report",  "callback_data": "/report"}],
+            [{"text": "⚡ Tech Levels",   "callback_data": "/levels"},
+             {"text": "🏆 Streak",        "callback_data": "/streak"}],
+            [{"text": "📋 Watchlist",     "callback_data": "/watchlist"},
+             {"text": "⚙️ Config",        "callback_data": "/config"}],
+            [{"text": "🔇 Mutes",         "callback_data": "/mutes"},
+             {"text": "🏓 Ping",          "callback_data": "/ping"}],
+        ]
+        result = send_message_with_buttons(text, buttons,
+                                           token=token, chat_id=chat_id)
+        return result is not None
+
+    # ── /check with no args → symbol picker ─────────────────────────
+    if cmd in ("/check", "/scan") and len(command.strip().split()) < 2:
+        text = "🔍 <b>Select a symbol to analyse:</b>"
+        sym_btns = [_sym_btn(n, "/check") for n in sym_names]
+        buttons = _chunk(sym_btns, 3)
+        result = send_message_with_buttons(text, buttons,
+                                           token=token, chat_id=chat_id)
+        return result is not None
+
+    # ── /levels with no args → symbol picker ────────────────────────
+    if cmd == "/levels" and len(command.strip().split()) < 2:
+        text = "⚡ <b>Select a symbol for Technical Levels:</b>"
+        sym_btns = [_sym_btn(n, "/levels") for n in sym_names]
+        buttons = _chunk(sym_btns, 3)
+        result = send_message_with_buttons(text, buttons,
+                                           token=token, chat_id=chat_id)
+        return result is not None
+
+    # ── /status → score table + per-symbol drill-down buttons ────────
+    if cmd == "/status":
+        response = handle_command(command, cfg, conn=conn,
+                                  symbols_status=symbols_status)
+        if response:
+            sym_btns = [{"text": f"🔍 {n.replace('USDT','').replace('USD','')}",
+                         "callback_data": f"/check {n}"} for n in sym_names]
+            buttons = _chunk(sym_btns, 3)
+            buttons.append([{"text": "🔄 Refresh Status", "callback_data": "/status"}])
+            result = send_message_with_buttons(response, buttons,
+                                               token=token, chat_id=chat_id)
+            return result is not None
+        return False
+
+    # ── All other commands → plain text ──────────────────────────────
+    response = handle_command(command, cfg, conn=conn,
+                              symbols_status=symbols_status)
+    if response:
+        send_text(response, token=token, chat_id=chat_id)
+        return True
+    return False
+
+
 # ── Telegram update polling ─────────────────────────────────────────
 _last_update_id = 0
 
@@ -665,7 +886,11 @@ def poll_commands(cfg: Config, conn: Any = None,
 
     try:
         url = f"{API_BASE.format(token=token)}/getUpdates"
-        params = {"timeout": 1, "allowed_updates": ["message"]}
+        params = {
+            "timeout": 1,
+            # Also subscribe to callback_query for inline button taps
+            "allowed_updates": ["message", "callback_query"],
+        }
         if _last_update_id:
             params["offset"] = _last_update_id + 1
 
@@ -684,24 +909,51 @@ def poll_commands(cfg: Config, conn: Any = None,
             if uid > newest_update_id:
                 newest_update_id = uid
 
+            # ── Branch 1: plain text message ──────────────────────
             msg = update.get("message", {})
-            text = msg.get("text", "")
-            msg_chat_id = str(msg.get("chat", {}).get("id", ""))
+            if msg:
+                text = msg.get("text", "")
+                msg_chat_id = str(msg.get("chat", {}).get("id", ""))
 
-            # Only respond to our chat
-            if msg_chat_id != chat_id:
+                if msg_chat_id != chat_id:
+                    continue
+                if not text.startswith("/"):
+                    continue
+
+                sent = handle_command_with_buttons(
+                    text, cfg, conn=conn,
+                    symbols_status=symbols_status,
+                    token=token, chat_id=chat_id,
+                )
+                if sent:
+                    processed += 1
+                    log.info("Command: %s \u2192 responded", text.split()[0])
                 continue
 
-            if not text.startswith("/"):
-                continue
+            # ── Branch 2: inline button tap (callback_query) ───────
+            cb = update.get("callback_query", {})
+            if cb:
+                cb_chat_id = str(
+                    cb.get("message", {}).get("chat", {}).get("id", "")
+                )
+                if cb_chat_id != chat_id:
+                    continue
 
-            response = handle_command(text, cfg, conn=conn,
-                                      symbols_status=symbols_status)
-            if response:
-                send_text(response, token=token, chat_id=chat_id)
-                processed += 1
-                log.info("Command: %s \u2192 responded (%d chars)",
-                         text.split()[0], len(response))
+                # Ack immediately to clear the loading spinner
+                answer_callback_query(cb["id"], token=token)
+
+                cb_data = cb.get("data", "").strip()
+                if not cb_data.startswith("/"):
+                    continue
+
+                sent = handle_command_with_buttons(
+                    cb_data, cfg, conn=conn,
+                    symbols_status=symbols_status,
+                    token=token, chat_id=chat_id,
+                )
+                if sent:
+                    processed += 1
+                    log.info("Callback: %s \u2192 responded", cb_data.split()[0])
 
         if newest_update_id > _last_update_id:
             _last_update_id = newest_update_id
