@@ -42,6 +42,7 @@ class TradePlan:
     brief_reason: str = ""    # 1-line human-readable reason for the signal
     session: str = ""         # e.g. London Session, New York Session
     killzone: str = ""        # e.g. London Open, New York Open (if in killzone)
+    grade: str = ""           # Setup quality: A+, A, B
 
 
 def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
@@ -178,6 +179,15 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         entry_hi = min(entry_hi, sl - 0.05 * atr_val)
         entry_lo = max(entry_lo, tp1 + 0.05 * atr_val)
 
+    # Setup Quality Grade
+    abs_score = abs(signal.score)
+    if abs_score >= 60 or (abs_score >= 45 and signal.confidence >= 75):
+        grade = "A+"
+    elif abs_score >= 38 or (abs_score >= 28 and signal.confidence >= 65):
+        grade = "A"
+    else:
+        grade = "B"
+
     return TradePlan(
         direction=direction,
         entry_low=round(entry_lo, _decimals(entry_mid)),
@@ -198,6 +208,7 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         brief_reason=brief,
         session=sess_name,
         killzone=kz_name,
+        grade=grade,
     )
 
 

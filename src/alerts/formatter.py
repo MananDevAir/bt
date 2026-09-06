@@ -94,8 +94,19 @@ def format_signal(signal: Any, plan: Any | None,
         "Positional": "\U0001f4c8", # 📈
     }
 
+    # Grade badge
+    grade = getattr(plan, "grade", "") if plan else ""
+    if grade == "A+":
+        badge = "  \u2022  \U0001f3c6 <b>GRADE A+</b>"
+    elif grade == "A":
+        badge = "  \u2022  \U0001f3af <b>GRADE A</b>"
+    elif grade == "B":
+        badge = "  \u2022  \U0001f441\ufe0f <b>GRADE B</b>"
+    else:
+        badge = ""
+
     # ── Header ──────────────────────────────────────
-    lines.append(f"{arrow} <b>{sym}  \u2022  {signal.label}</b>")
+    lines.append(f"{arrow} <b>{sym}  \u2022  {signal.label}</b>{badge}")
     lines.append(f"\U0001f4ca Score: {signal.score:+.1f}  |  Confidence: {signal.confidence:.0f}%")
 
     # ── Trade Type (immediately visible) ────────────
