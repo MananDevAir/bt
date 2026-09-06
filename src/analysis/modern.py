@@ -341,6 +341,60 @@ def volatility_regime(df: pd.DataFrame, lookback: int = 200) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Squeeze detector (Bollinger inside Keltner — TTM Squeeze style)
+# --------------------------------------------------------------------------- #
+def squeeze_detector(df: pd.DataFrame,
+                     bb_len: int = 20, bb_mult: float = 2.0,
+                     kc_len: int = 20, kc_mult: float = 1.5) -> pd.DataFrame:
+    """Detect when Bollinger Bands are inside Keltner Channels (compression).
+
+    When BBands are inside KChannels, the market is compressing energy — a
+    squeeze is ON. When BBands expand *outside* the KChannels, the squeeze
+    fires (momentum expansion). The direction of the expansion is read from
+    the momentum oscillator (close delta smoothed vs its midline).
+
+    Returns a DataFrame with columns:
+        squeeze_on      : bool — BB fully inside KC this bar
+        squeeze_fire    : bool — was squeezed last bar, not squeezed this bar
+        sqz_momentum    : float — smoothed price delta from midline (+ = bull, - = bear)
+        sqz_momentum_chg: float — change in momentum (positive = accelerating)
+    """
+    close = df["close"]
+    high  = df["high"]
+    low   = df["low"]
+
+    # Bollinger Bands
+    bb = bollinger(close, bb_len, bb_mult)
+    bb_width = bb["upper"] - bb["lower"]
+
+    # Keltner Channel: EMA ± kc_mult × ATR
+    kc_mid   = ema(close, kc_len)
+    kc_atr   = atr(high, low, close, kc_len)
+    kc_upper = kc_mid + kc_mult * kc_atr
+    kc_lower = kc_mid - kc_mult * kc_atr
+
+    # Squeeze = BBands fully inside KC
+    sq_on = (bb["upper"] < kc_upper) & (bb["lower"] > kc_lower)
+
+    # Fire = squeeze was ON last bar, now OFF (expansion just started)
+    sq_fire = sq_on.shift(1).fillna(False) & ~sq_on
+
+    # Momentum oscillator: distance of close from midpoint of recent range
+    highest = high.rolling(kc_len, min_periods=kc_len).max()
+    lowest  = low.rolling(kc_len, min_periods=kc_len).min()
+    delta   = close - (highest + lowest) / 2.0 - (bb["mid"] - close)
+    momentum = ema(delta, kc_len)
+    mom_chg  = momentum.diff(1)
+
+    return pd.DataFrame({
+        "squeeze_on":       sq_on.astype(float),
+        "squeeze_fire":     sq_fire.astype(float),
+        "sqz_momentum":     momentum,
+        "sqz_momentum_chg": mom_chg,
+    }, index=df.index)
+
+
+# --------------------------------------------------------------------------- #
 # bundle
 # --------------------------------------------------------------------------- #
 def modern_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -355,5 +409,11 @@ def modern_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = out.join(ichimoku(df))
     out["mfi"] = mfi(df, 14)
     out["ema21"] = ema(df["close"], 21)
+    # Squeeze columns (per-bar)
+    sqz = squeeze_detector(df)
+    out["squeeze_on"]       = sqz["squeeze_on"]
+    out["squeeze_fire"]     = sqz["squeeze_fire"]
+    out["sqz_momentum"]     = sqz["sqz_momentum"]
+    out["sqz_momentum_chg"] = sqz["sqz_momentum_chg"]
     return out
 

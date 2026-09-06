@@ -173,11 +173,6 @@ def _with_wide_zone(signal, width_atr: float = 8.0):
     return signal, atr
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "levels.py:94-101 takes the entry zone as the full width of the source "
-    "order block / FVG but measures risk from its midpoint, with no constraint "
-    "between the two. A zone wider than 2x the risk distance straddles the stop, "
-    "and higher-timeframe zones are wide relative to the 15m ATR the stop uses."))
 def test_entry_zone_never_straddles_the_stop(frozen_frames, loose):
     """Filling anywhere in the published zone must leave the stop unhit.
 
@@ -200,9 +195,6 @@ def test_entry_zone_never_straddles_the_stop(frozen_frames, loose):
         f"risk {p.risk_atr:.2f} ATR, source={p.source})")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "same root cause as the stop straddle: TP1 is entry_mid + 1R and R is "
-    "capped at 3 ATR, so a zone wider than 2 ATR can have its far edge past TP1"))
 def test_entry_zone_never_straddles_tp1(frozen_frames, loose):
     """TP1 must sit outside the entry zone, or the trade is already closed."""
     signal = score_symbol(frozen_frames, SYM, loose)
@@ -373,7 +365,7 @@ def test_invalidation_names_the_stop_and_the_right_side(long_plan, short_plan):
 
 def test_source_and_trade_type_are_from_the_known_sets(long_plan, short_plan):
     for _, p in (long_plan, short_plan):
-        assert p.source in {"order_block", "fvg", "fib_ote", "market"}
+        assert p.source in {"order_block", "fvg", "fib_ote", "bos_retest", "market"}
         assert p.trade_type in {"Intraday", "Swing", "Short-term", "Positional"}
         assert p.holding_horizon
         assert p.brief_reason, "no human-readable reason for the signal"

@@ -94,11 +94,11 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
 
     # ----- Entry zone -----
     entry_mid, entry_lo, entry_hi, source = _find_entry(
-        signal, direction, current_close, atr_val)
+        signal, direction, current_close, atr_val, cfg=cfg)
 
     # ----- Stop loss -----
     sl = _find_stop(signal, direction, entry_mid, atr_val,
-                    atr_stop_mult, struct_buffer)
+                    atr_stop_mult, struct_buffer, cfg=cfg)
 
     risk = abs(entry_mid - sl)
     if risk <= 0:
@@ -133,7 +133,7 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     tp3 = entry_mid + direction * tp_r_mults[2] * risk
 
     # Snap TPs to nearby structure levels
-    tp3 = _snap_to_structure(tp3, signal, direction, atr_val, snap_tol)
+    tp3 = _snap_to_structure(tp3, signal, direction, atr_val, snap_tol, cfg=cfg)
 
     # R:R (measured to TP2)
     rr = abs(tp2 - entry_mid) / risk if risk > 0 else 0
@@ -171,8 +171,12 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     dec = _decimals(sl)
     if direction > 0:
         inv = f"HTF/MTF close below SL ({sl:,.{dec}f})"
+        entry_lo = max(entry_lo, sl + 0.05 * atr_val)
+        entry_hi = min(entry_hi, tp1 - 0.05 * atr_val)
     else:
         inv = f"HTF/MTF close above SL ({sl:,.{dec}f})"
+        entry_hi = min(entry_hi, sl - 0.05 * atr_val)
+        entry_lo = max(entry_lo, tp1 + 0.05 * atr_val)
 
     return TradePlan(
         direction=direction,
@@ -197,20 +201,30 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     )
 
 
+_TF_MINUTES = {
+    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "2h": 120, "4h": 240, "6h": 360, "12h": 720,
+    "1d": 1440, "1w": 10080,
+}
+
+
+def _get_ordered_tfs(signal: SignalResult, cfg: Config | None = None) -> list[str]:
+    """Return timeframes in consistent LTF -> MTF -> HTF order."""
+    if cfg is not None:
+        return [cfg.ltf] + [t for t in cfg.mtf if t not in (cfg.ltf, cfg.htf)] + [cfg.htf]
+    return sorted(signal.tf_results.keys(), key=lambda t: _TF_MINUTES.get(t, 9999))
+
+
 # =========================================================================== #
 # Entry zone finder
 # =========================================================================== #
 def _find_entry(signal: SignalResult, direction: int, close: float,
-                atr_val: float) -> tuple[float, float, float, str]:
+                atr_val: float, cfg: Config | None = None) -> tuple[float, float, float, str]:
     """Find the best entry zone from OBs, FVGs, fib OTE, or market.
 
     Iterates LTF → HTF so a tight 15m OB always wins over a wide 4h OB.
     """
-    cfg = signal._cfg if hasattr(signal, "_cfg") else None
-    if cfg is not None:
-        entry_tfs = [cfg.ltf] + list(cfg.mtf) + [cfg.htf]
-    else:
-        entry_tfs = list(signal.tf_results.keys())
+    entry_tfs = _get_ordered_tfs(signal, cfg)
 
     # Priority 1: nearest unmitigated order block in signal direction
     for tf in entry_tfs:
@@ -247,6 +261,50 @@ def _find_entry(signal: SignalResult, direction: int, close: float,
                         band = 0.25 * atr_val
                         return fib.price, fib.price - band, fib.price + band, "fib_ote"
 
+    # Priority 4: Post-BOS displacement retest (sniper entry).
+    # After a BOS, institutional traders re-enter on the 50% pullback of the
+    # displacement candle (the big breakout bar). This gives a tighter stop
+    # vs chasing the market entry and improves R:R significantly.
+    # Only fire when: BOS on LTF within 10 bars + price has displaced ≥ 1 ATR.
+    ltf_tfs = entry_tfs[:2]  # LTF + first MTF only (we want precision, not HTF OBs)
+    for tf in ltf_tfs:
+        tfr = signal.tf_results.get(tf)
+        if not tfr or not tfr.smc or tfr.raw_df is None:
+            continue
+        bos_list = tfr.smc.get("bos", [])
+        if not bos_list:
+            continue
+        # Look for a recent BOS in the signal direction
+        last_n = len(tfr.raw_df) if tfr.raw_df is not None else 0
+        for bos in reversed(bos_list):
+            bars_ago = last_n - bos.idx - 1
+            if bars_ago > 10:
+                break  # too old
+            if bos.direction != direction:
+                continue
+            # BOS is recent and in our direction — check for displacement
+            broken_level = bos.broken_level
+            displacement = abs(close - broken_level)
+            if displacement < 1.0 * atr_val:
+                continue  # not enough displacement to trade a retest
+            # Find the breakout bar (the BOS bar itself) in the raw OHLCV
+            if tfr.raw_df is not None and bos.idx < len(tfr.raw_df):
+                bos_bar = tfr.raw_df.iloc[bos.idx]
+                bar_hi = float(bos_bar["high"])
+                bar_lo = float(bos_bar["low"])
+                bar_body_hi = max(float(bos_bar["open"]), float(bos_bar["close"]))
+                bar_body_lo = min(float(bos_bar["open"]), float(bos_bar["close"]))
+                # 50% retest of the displacement (body midpoint of the breakout bar)
+                retest_level = (bar_body_hi + bar_body_lo) / 2.0
+                # Only valid if price is currently above (long) or below (short) the level
+                if direction > 0 and close > retest_level:
+                    band = 0.20 * atr_val
+                    return retest_level, retest_level - band, retest_level + band, "bos_retest"
+                elif direction < 0 and close < retest_level:
+                    band = 0.20 * atr_val
+                    return retest_level, retest_level - band, retest_level + band, "bos_retest"
+            break
+
     # Fallback: market entry (current close ± 0.25 ATR)
     band = 0.25 * atr_val
     return close, close - band, close + band, "market"
@@ -256,7 +314,8 @@ def _find_entry(signal: SignalResult, direction: int, close: float,
 # Stop loss finder
 # =========================================================================== #
 def _find_stop(signal: SignalResult, direction: int, entry: float,
-               atr_val: float, atr_mult: float, buffer: float) -> float:
+               atr_val: float, atr_mult: float, buffer: float,
+               cfg: Config | None = None) -> float:
     """Find stop loss: structure first, ATR as sanity bound."""
 
     # ATR-based stop
@@ -264,15 +323,7 @@ def _find_stop(signal: SignalResult, direction: int, entry: float,
 
     # Structure-based stop: last swing in the opposite direction
     sl_struct = sl_atr  # fallback
-    # Build TF list from signal to avoid hardcoding; prefer LTF for precision.
-    stop_tfs: list[str] = []
-    for tf in signal.tf_results:
-        stop_tfs.append(tf)
-    # Sort rough LTF-first order by common timeframe durations
-    _tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
-                   "1h": 60, "2h": 120, "4h": 240, "6h": 360, "12h": 720,
-                   "1d": 1440, "1w": 10080}
-    stop_tfs.sort(key=lambda t: _tf_minutes.get(t, 9999))
+    stop_tfs = _get_ordered_tfs(signal, cfg)
     for tf in stop_tfs:
         tfr = signal.tf_results.get(tf)
         if not tfr or not tfr.smc:
@@ -304,10 +355,13 @@ def _find_stop(signal: SignalResult, direction: int, entry: float,
 # TP snapping to structure
 # =========================================================================== #
 def _snap_to_structure(tp: float, signal: SignalResult, direction: int,
-                       atr_val: float, tolerance: float) -> float:
+                       atr_val: float, tolerance: float,
+                       cfg: Config | None = None) -> float:
     """If a real level is near a raw TP, snap to just before it."""
-    for tf, tfr in signal.tf_results.items():
-        if not tfr.pa:
+    snap_tfs = _get_ordered_tfs(signal, cfg)
+    for tf in snap_tfs:
+        tfr = signal.tf_results.get(tf)
+        if not tfr or not tfr.pa:
             continue
         # Check S/R zones
         for sr in tfr.pa.get("sr_zones", []):

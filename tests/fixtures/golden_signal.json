@@ -1,5 +1,5 @@
 {
-  "confidence": 60.6,
+  "confidence": 61.6,
   "direction": 1,
   "gate_passed": true,
   "gates": {
@@ -15,15 +15,15 @@
   "label": "NEUTRAL",
   "max_possible": 1200.0,
   "plan": null,
-  "raw_score": 163.553619,
-  "score": 13.6,
+  "raw_score": 212.294095,
+  "score": 17.7,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
       "regime": "normal",
       "structure_bias": "bearish",
-      "vote_count": 28,
-      "vote_sum": 5.45,
+      "vote_count": 31,
+      "vote_sum": 6.65,
       "votes": [
         {
           "category": "momentum",
@@ -51,25 +51,43 @@
         },
         {
           "category": "momentum",
+          "detail": "squeeze active (compression \u2014 awaiting breakout)",
+          "name": "squeeze",
+          "value": 0.0
+        },
+        {
+          "category": "momentum",
           "detail": "Stoch K > D",
           "name": "stoch",
           "value": 0.3
         },
         {
           "category": "structure",
-          "detail": "CHOCH bear",
+          "detail": "BOS bear (continuation)",
           "name": "bos",
-          "value": -0.9
+          "value": -0.8
         },
         {
           "category": "structure",
-          "detail": "equal highs @ 23,055 (liq pool)",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "equal highs @ 23,055 (above (resistance))",
           "name": "equal_levels",
           "value": -0.3
         },
         {
           "category": "structure",
-          "detail": "equal lows @ 22,833 (liq pool)",
+          "detail": "equal lows @ 22,833 (below (support))",
           "name": "equal_levels",
           "value": 0.3
         },
@@ -123,9 +141,9 @@
         },
         {
           "category": "trend",
-          "detail": "SuperTrend UP",
+          "detail": "SuperTrend UP (damped)",
           "name": "supertrend",
-          "value": 1.0
+          "value": 0.5
         },
         {
           "category": "trend",
@@ -198,8 +216,8 @@
     "1d": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 24,
-      "vote_sum": -3.37,
+      "vote_count": 29,
+      "vote_sum": -2.77,
       "votes": [
         {
           "category": "momentum",
@@ -215,25 +233,55 @@
         },
         {
           "category": "momentum",
+          "detail": "squeeze active (compression \u2014 awaiting breakout)",
+          "name": "squeeze",
+          "value": 0.0
+        },
+        {
+          "category": "momentum",
           "detail": "Stoch K < D",
           "name": "stoch",
           "value": -0.3
         },
         {
           "category": "structure",
-          "detail": "BOS bear",
+          "detail": "BOS bear (continuation)",
           "name": "bos",
-          "value": -0.9
+          "value": -0.8
         },
         {
           "category": "structure",
-          "detail": "equal highs @ 23,783 (liq pool)",
+          "detail": "BOS bear (continuation)",
+          "name": "bos",
+          "value": -0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bear (continuation)",
+          "name": "bos",
+          "value": -0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "equal highs @ 23,783 (above (resistance))",
           "name": "equal_levels",
           "value": -0.3
         },
         {
           "category": "structure",
-          "detail": "equal lows @ 21,715 (liq pool)",
+          "detail": "equal lows @ 21,715 (below (support))",
           "name": "equal_levels",
           "value": 0.3
         },
@@ -287,9 +335,9 @@
         },
         {
           "category": "trend",
-          "detail": "SuperTrend DOWN",
+          "detail": "SuperTrend DOWN (damped)",
           "name": "supertrend",
-          "value": -1.0
+          "value": -0.5
         },
         {
           "category": "trend",
@@ -350,8 +398,8 @@
     "1h": {
       "regime": "expanding",
       "structure_bias": "bullish",
-      "vote_count": 26,
-      "vote_sum": 7.37,
+      "vote_count": 28,
+      "vote_sum": 8.37,
       "votes": [
         {
           "category": "momentum",
@@ -373,19 +421,31 @@
         },
         {
           "category": "structure",
-          "detail": "CHOCH bull",
+          "detail": "BOS bull (continuation)",
           "name": "bos",
-          "value": 0.9
+          "value": 0.8
         },
         {
           "category": "structure",
-          "detail": "equal highs @ 23,071 (liq pool)",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "equal highs @ 23,071 (above (resistance))",
           "name": "equal_levels",
           "value": -0.3
         },
         {
           "category": "structure",
-          "detail": "equal lows @ 22,411 (liq pool)",
+          "detail": "equal lows @ 22,411 (below (support))",
           "name": "equal_levels",
           "value": 0.3
         },
@@ -439,9 +499,9 @@
         },
         {
           "category": "trend",
-          "detail": "SuperTrend UP",
+          "detail": "SuperTrend UP (damped)",
           "name": "supertrend",
-          "value": 1.0
+          "value": 0.5
         },
         {
           "category": "trend",
@@ -514,8 +574,8 @@
     "1w": {
       "regime": "quiet",
       "structure_bias": "bullish",
-      "vote_count": 26,
-      "vote_sum": 9.21,
+      "vote_count": 31,
+      "vote_sum": 9.41,
       "votes": [
         {
           "category": "momentum",
@@ -537,19 +597,49 @@
         },
         {
           "category": "structure",
-          "detail": "BOS bull",
+          "detail": "BOS bear (continuation)",
           "name": "bos",
-          "value": 0.9
+          "value": -0.8
         },
         {
           "category": "structure",
-          "detail": "equal highs @ 23,807 (liq pool)",
+          "detail": "BOS bear (continuation)",
+          "name": "bos",
+          "value": -0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "equal highs @ 23,807 (above (resistance))",
           "name": "equal_levels",
           "value": -0.3
         },
         {
           "category": "structure",
-          "detail": "equal lows @ 20,465 (liq pool)",
+          "detail": "equal lows @ 20,465 (below (support))",
           "name": "equal_levels",
           "value": 0.3
         },
@@ -603,9 +693,9 @@
         },
         {
           "category": "trend",
-          "detail": "SuperTrend UP",
+          "detail": "SuperTrend UP (damped)",
           "name": "supertrend",
-          "value": 1.0
+          "value": 0.5
         },
         {
           "category": "trend",
@@ -678,8 +768,8 @@
     "4h": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 26,
-      "vote_sum": 0.65,
+      "vote_count": 30,
+      "vote_sum": 3.45,
       "votes": [
         {
           "category": "momentum",
@@ -701,25 +791,49 @@
         },
         {
           "category": "momentum",
+          "detail": "squeeze fired bullish (BB > KC expansion)",
+          "name": "squeeze",
+          "value": 0.8
+        },
+        {
+          "category": "momentum",
           "detail": "Stoch K=88 overbought",
           "name": "stoch",
           "value": -0.5
         },
         {
           "category": "structure",
-          "detail": "CHOCH bear",
+          "detail": "BOS bear (continuation)",
           "name": "bos",
-          "value": -0.9
+          "value": -0.8
         },
         {
           "category": "structure",
-          "detail": "equal highs @ 23,122 (liq pool)",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "BOS bull (continuation)",
+          "name": "bos",
+          "value": 0.8
+        },
+        {
+          "category": "structure",
+          "detail": "equal highs @ 23,122 (above (resistance))",
           "name": "equal_levels",
           "value": -0.3
         },
         {
           "category": "structure",
-          "detail": "equal lows @ 22,095 (liq pool)",
+          "detail": "equal lows @ 22,095 (below (support))",
           "name": "equal_levels",
           "value": 0.3
         },
@@ -773,9 +887,9 @@
         },
         {
           "category": "trend",
-          "detail": "SuperTrend UP",
+          "detail": "SuperTrend UP (damped)",
           "name": "supertrend",
-          "value": 1.0
+          "value": 0.5
         },
         {
           "category": "trend",

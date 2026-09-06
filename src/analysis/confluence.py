@@ -123,11 +123,12 @@ def _trend_votes(ci: pd.DataFrame, mi: pd.DataFrame, last: pd.Series,
     elif c["sma50"] < c["sma200"]:
         votes.append(Vote("sma_cross", "trend", -0.6, "death cross (SMA50<200)"))
 
-    # SuperTrend direction
+    # SuperTrend direction — weight halved to ±0.5 (was ±1.0) to reduce the
+    # hardcoded-seed bias in quiet/choppy markets where the band never flips.
     if not np.isnan(mlast["st_dir"]):
-        val = float(mlast["st_dir"])  # +1 or -1
+        val = 0.5 * float(mlast["st_dir"])  # ±0.5 (seed-damped)
         votes.append(Vote("supertrend", "trend", val,
-                          f"SuperTrend {'UP' if val > 0 else 'DOWN'}"))
+                          f"SuperTrend {'UP' if val > 0 else 'DOWN'} (damped)"))
 
     # Ichimoku: price vs cloud
     if not np.isnan(mlast.get("cloud_top", np.nan)):
@@ -214,8 +215,7 @@ def _trend_votes(ci: pd.DataFrame, mi: pd.DataFrame, last: pd.Series,
     return votes
 
 
-
-def _structure_votes(smc_data: dict) -> list[Vote]:
+def _structure_votes(smc_data: dict, close_price: float = 0.0) -> list[Vote]:
     """Structure category: HH-HL labels, BOS, CHoCH, premium/discount."""
     votes: list[Vote] = []
 
@@ -228,17 +228,18 @@ def _structure_votes(smc_data: dict) -> list[Vote]:
     else:
         votes.append(Vote("structure_bias", "structure", 0.0, "neutral structure"))
 
-    # BOS / CHoCH — most recent
-    bos_list = smc_data.get("bos", [])
-    if bos_list:
-        last_bos = bos_list[-1]
-        val = 0.9 * last_bos.direction
-        votes.append(Vote("bos", "structure", val,
-                          f"{last_bos.kind.upper()} {'bull' if last_bos.direction > 0 else 'bear'}"))
+    # BOS and CHoCH
+    for bos in smc_data.get("bos", []):
+        if bos.kind == "CHOCH":
+            votes.append(Vote("choch", "structure", 1.0 * bos.direction,
+                              f"CHoCH {'bull' if bos.direction > 0 else 'bear'} (trend shift)"))
+        else:
+            votes.append(Vote("bos", "structure", 0.8 * bos.direction,
+                              f"BOS {'bull' if bos.direction > 0 else 'bear'} (continuation)"))
 
     # Premium / Discount
     pd_zone = smc_data.get("premium_discount")
-    if pd_zone:
+    if pd_zone is not None:
         if pd_zone.zone == "premium":
             votes.append(Vote("premium_discount", "structure", -0.5,
                               f"premium zone ({pd_zone.pct:.0f}%)"))
@@ -248,17 +249,23 @@ def _structure_votes(smc_data: dict) -> list[Vote]:
         else:
             votes.append(Vote("premium_discount", "structure", 0.0, "equilibrium"))
 
-    # Equal levels (liquidity pools)
+    # Equal levels (liquidity pools) — vote direction based on price location.
+    # Equal lows BELOW price = unswept support → bullish (+0.3).
+    # Equal lows ABOVE price = price targeted them from below → bearish (−0.3).
+    # Equal highs ABOVE price = unswept resistance → bearish (−0.3).
+    # Equal highs BELOW price = broken resistance, now support → bullish (+0.3).
+    # This is symmetric under chart reflection and removes the constant long bias.
     eq = smc_data.get("equal_levels", [])
     if eq:
-        # Equal lows below = bullish target, equal highs above = bearish target
         for el in eq[-2:]:
             if el.kind == "equal_lows":
-                votes.append(Vote("equal_levels", "structure", +0.3,
-                                  f"equal lows @ {el.price:,.0f} (liq pool)"))
+                vote_dir = +0.3 if el.price < close_price else -0.3
+                label = "below (support)" if vote_dir > 0 else "above (liq target)"
             else:
-                votes.append(Vote("equal_levels", "structure", -0.3,
-                                  f"equal highs @ {el.price:,.0f} (liq pool)"))
+                vote_dir = -0.3 if el.price > close_price else +0.3
+                label = "above (resistance)" if vote_dir < 0 else "below (broken resistance)"
+            votes.append(Vote("equal_levels", "structure", vote_dir,
+                              f"equal {'lows' if el.kind == 'equal_lows' else 'highs'} @ {el.price:,.0f} ({label})"))
 
     return votes
 
@@ -315,6 +322,26 @@ def _momentum_votes(last: pd.Series, mi_last: pd.Series,
             votes.append(Vote("mfi", "momentum", -0.4, f"MFI={mfi_val:.0f} overbought"))
         elif mfi_val < 20:
             votes.append(Vote("mfi", "momentum", +0.4, f"MFI={mfi_val:.0f} oversold"))
+
+    # Squeeze detector — Bollinger inside Keltner (TTM-style).
+    # A firing squeeze (energy expansion just started) in signal direction is a
+    # high-conviction entry catalyst. Against direction it's a warning.
+    sqz_fire = mi_last.get("squeeze_fire", np.nan)
+    sqz_on   = mi_last.get("squeeze_on",   np.nan)
+    sqz_mom  = mi_last.get("sqz_momentum", np.nan)
+    if not np.isnan(sqz_fire) and not np.isnan(sqz_mom):
+        if sqz_fire > 0:  # squeeze just fired this bar
+            if sqz_mom > 0:
+                votes.append(Vote("squeeze", "momentum", +0.8,
+                                  "squeeze fired bullish (BB > KC expansion)"))
+            else:
+                votes.append(Vote("squeeze", "momentum", -0.8,
+                                  "squeeze fired bearish (BB > KC expansion)"))
+        elif not np.isnan(sqz_on) and sqz_on > 0:
+            # Squeeze still on — energy building, no directional vote yet
+            # but note it in momentum as a compression signal
+            votes.append(Vote("squeeze", "momentum", 0.0,
+                              "squeeze active (compression — awaiting breakout)"))
 
     return votes
 
@@ -461,7 +488,7 @@ def _compute_tf(df: pd.DataFrame, tf: str) -> TFResult:
 
     # Collect all votes
     result.votes.extend(_trend_votes(ci, mi, last, mlast))
-    result.votes.extend(_structure_votes(smc))
+    result.votes.extend(_structure_votes(smc, close))
     result.votes.extend(_momentum_votes(last, mlast, divs))
     result.votes.extend(_zone_votes(pa, smc, close, atr_val))
     result.votes.extend(_volume_votes(last, vp, mlast, close))
@@ -596,8 +623,22 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
                          if v.get("action") == "downgrade")
     penalty = gate_penalties * 5.0
 
+    # 5. Session / Killzone bonus (+4% in active killzone, -4% in dead session/weekend)
+    try:
+        from ..data.sessions import get_active_killzone, get_market_session
+        kz = get_active_killzone()
+        sess = get_market_session()
+        if kz:
+            session_bonus = 4.0
+        elif sess in ("asian_dead", "weekend"):
+            session_bonus = -4.0
+        else:
+            session_bonus = 0.0
+    except Exception:
+        session_bonus = 0.0
+
     # Combine and clamp between 50% and 98%
-    final_conf = base_conf + tf_bonus + cat_bonus - penalty
+    final_conf = base_conf + tf_bonus + cat_bonus - penalty + session_bonus
     result.confidence = round(max(50.0, min(98.0, final_conf)), 1)
 
     return result

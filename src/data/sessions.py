@@ -73,6 +73,8 @@ def get_active_killzone(now: datetime | None = None) -> str | None:
     if dt.weekday() > 4:  # Weekend
         return None
     t = dt.time()
+    if time(2, 0) <= t < time(4, 0):
+        return "Asian Open"
     if time(7, 0) <= t < time(10, 30):
         return "London Open"
     if time(12, 30) <= t < time(17, 0):
@@ -83,12 +85,23 @@ def get_active_killzone(now: datetime | None = None) -> str | None:
 
 
 def get_market_session(now: datetime | None = None) -> str:
-    """Return the active global session name."""
-    t = _now_utc(now).time()
-    if time(0, 0) <= t < time(7, 0):
-        return "Asian Session"
+    """Return the active global session name (lowercase, stable identifiers).
+
+    Returns one of: 'asian_dead', 'asian', 'london', 'overlap', 'new_york',
+    'new_york_close', 'weekend'.
+    """
+    dt = _now_utc(now)
+    if dt.weekday() > 4:          # Saturday or Sunday
+        return "weekend"
+    t = dt.time()
+    if time(0, 0) <= t < time(5, 0):
+        return "asian_dead"       # pre-London dead zone — high fakeout risk
+    if time(5, 0) <= t < time(7, 0):
+        return "asian"            # late Asian / early Europe pre-open
     if time(7, 0) <= t < time(12, 30):
-        return "London Session"
-    if time(12, 30) <= t < time(21, 0):
-        return "New York Session"
-    return "Pacific Session"
+        return "london"           # London cash session
+    if time(12, 30) <= t < time(17, 0):
+        return "overlap"          # London / New York overlap — highest volume
+    if time(17, 0) <= t < time(21, 0):
+        return "new_york"         # New York afternoon
+    return "new_york_close"       # NY close / early Asian build-up
