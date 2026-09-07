@@ -9,6 +9,7 @@ Golden rule: same candles → same score, always. No randomness, no LLM input.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -501,7 +502,7 @@ def _compute_tf(df: pd.DataFrame, tf: str) -> TFResult:
 
 
 def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
-                 cfg: Config) -> SignalResult:
+                 cfg: Config, now: datetime | None = None) -> SignalResult:
     """Score one symbol across all available timeframes.
 
     This is the main entry point for the confluence engine.
@@ -630,8 +631,22 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
     # 5. Session / Killzone bonus (+4% in active killzone, -4% in dead session/weekend)
     try:
         from ..data.sessions import get_active_killzone, get_market_session
-        kz = get_active_killzone()
-        sess = get_market_session()
+        cand_now = now
+        if cand_now is None:
+            cand_dts = []
+            for f in frames.values():
+                if f is not None and not f.empty:
+                    last_idx = f.index[-1]
+                    if hasattr(last_idx, "to_pydatetime"):
+                        dt_val = last_idx.to_pydatetime()
+                        if dt_val.tzinfo is None:
+                            from datetime import timezone
+                            dt_val = dt_val.replace(tzinfo=timezone.utc)
+                        cand_dts.append(dt_val)
+            if cand_dts:
+                cand_now = max(cand_dts)
+        kz = get_active_killzone(cand_now)
+        sess = get_market_session(cand_now)
         if kz:
             session_bonus = 4.0
         elif sess in ("asian_dead", "weekend"):

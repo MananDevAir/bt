@@ -383,34 +383,24 @@ def detect_liquidity_sweeps(df: pd.DataFrame, left: int = 3,
         body_hi = max(o[i], c[i])
         body_lo = min(o[i], c[i])
 
-        # Sweep of highs: wick goes above swing high, body closes below
-        for sh in swing_highs:
-            if sh.idx >= i:
-                continue
-            if h[i] > sh.price and body_hi < sh.price:
-                beyond = h[i] - sh.price
-                sweeps.append(LiquiditySweep(
-                    i, df.index[i], sh.price, -1, beyond))
+        # Deepest swing high swept by this bar
+        swept_sh = [sh for sh in swing_highs if sh.idx < i and h[i] > sh.price and body_hi < sh.price]
+        # Deepest swing low swept by this bar
+        swept_sl = [sl for sl in swing_lows if sl.idx < i and l[i] < sl.price and body_lo > sl.price]
 
-        # Sweep of lows: wick goes below swing low, body closes above
-        for sl in swing_lows:
-            if sl.idx >= i:
-                continue
-            if l[i] < sl.price and body_lo > sl.price:
-                beyond = sl.price - l[i]
-                sweeps.append(LiquiditySweep(
-                    i, df.index[i], sl.price, +1, beyond))
+        # If only high swept -> -1 (bearish reversal)
+        # If only low swept -> +1 (bullish reversal)
+        # If both swept (dual wick) -> neutral (omit to maintain bar symmetry)
+        if swept_sh and not swept_sl:
+            best_sh = max(swept_sh, key=lambda s: s.price)
+            sweeps.append(LiquiditySweep(
+                i, df.index[i], best_sh.price, -1, h[i] - best_sh.price))
+        elif swept_sl and not swept_sh:
+            best_sl = min(swept_sl, key=lambda s: s.price)
+            sweeps.append(LiquiditySweep(
+                i, df.index[i], best_sl.price, +1, best_sl.price - l[i]))
 
-    # Deduplicate: keep the most recent sweep per level
-    seen: set[float] = set()
-    unique: list[LiquiditySweep] = []
-    for s in reversed(sweeps):
-        key = round(s.swept_level, 8)
-        if key not in seen:
-            seen.add(key)
-            unique.append(s)
-    unique.reverse()
-    return unique[-10:]
+    return sweeps[-10:]
 
 
 # =========================================================================== #
@@ -464,9 +454,9 @@ def detect_equal_levels(df: pd.DataFrame, atr_mult: float = 0.1,
                     avg_price, label, len(cluster),
                     cluster[0].ts, cluster[-1].ts))
 
-    # Sort chronologically by the last swing in each pool so `eq[-2:]` in
-    # confluence.py grabs the truly most recent levels, not just the lows.
-    result.sort(key=lambda x: x.last_ts)
+    # Sort chronologically by the last swing in each pool, then first swing and count,
+    # so `eq[-2:]` in confluence.py grabs the truly most recent levels symmetrically.
+    result.sort(key=lambda x: (x.last_ts, x.first_ts, x.count))
     return result
 
 

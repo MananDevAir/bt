@@ -24,11 +24,28 @@ def save(conn: sqlite3.Connection, symbol: str, timeframe: str, df: pd.DataFrame
     if df is None or df.empty:
         return 0
     n = len(df)
-    ts_ms = (df.index.astype("int64") // 1_000_000).tolist()
+    idx_utc = pd.to_datetime(df.index, utc=True)
+    ts_ms = idx_utc.astype("datetime64[ms, UTC]").astype("int64").tolist()
+
+    opens = df["open"].astype(float).tolist()
+    highs = df["high"].astype(float).tolist()
+    lows = df["low"].astype(float).tolist()
+    closes = df["close"].astype(float).tolist()
+    volumes = df["volume"].astype(float).tolist() if "volume" in df.columns else [0.0] * n
+
+    # Enforce bar integrity: high >= max(open, close), low <= min(open, close)
+    for i in range(n):
+        o, c = opens[i], closes[i]
+        if highs[i] < o or highs[i] < c:
+            highs[i] = max(highs[i], o, c)
+        if lows[i] > o or lows[i] > c:
+            lows[i] = min(lows[i], o, c)
+        if highs[i] < lows[i]:
+            highs[i] = lows[i]
+
     rows = list(zip(
         [symbol] * n, [timeframe] * n, ts_ms,
-        df["open"].tolist(), df["high"].tolist(), df["low"].tolist(),
-        df["close"].tolist(), df["volume"].tolist(),
+        opens, highs, lows, closes, volumes,
     ))
     conn.executemany(
         "INSERT INTO candles(symbol,timeframe,ts,open,high,low,close,volume) "
@@ -48,7 +65,8 @@ def load(
     """Return the most recent `limit` candles, oldest first."""
     cur = conn.execute(
         "SELECT ts, open, high, low, close, volume FROM candles "
-        "WHERE symbol=? AND timeframe=? ORDER BY ts DESC LIMIT ?",
+        "WHERE symbol=? AND timeframe=? AND ts >= 1000000000000 "
+        "ORDER BY ts DESC LIMIT ?",
         (symbol, timeframe, int(limit)),
     )
     rows = cur.fetchall()
@@ -71,7 +89,7 @@ def last_timestamp(conn: sqlite3.Connection, symbol: str,
     """
     row = conn.execute(
         "SELECT MAX(ts) AS latest FROM candles "
-        "WHERE symbol=? AND timeframe=?",
+        "WHERE symbol=? AND timeframe=? AND ts >= 1000000000000",
         (symbol, timeframe),
     ).fetchone()
     if not row or row["latest"] is None:

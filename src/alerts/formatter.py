@@ -269,7 +269,7 @@ def format_tp_update(sig: dict[str, Any], tp_level: str,
         f"\U0001f3af <b>TAKE PROFIT {tp_level.upper()} HIT (+{r_mult}R)</b>",
         "\u2500" * 25,
         f"\U0001f4cc <b>Trade:</b> #{sig_id} \u2022 <b>{sym} {direction}</b>",
-        f"\U0001f4b5 <b>Exit Price:</b> {fp(exit_price)}",
+        f"\U0001f3af <b>Target Level:</b> {fp(exit_price)}",
     ]
     if progress:
         lines.append(f"\U0001f4ca <b>Status:</b> {progress}")
@@ -308,7 +308,7 @@ def format_sl_update(sig: dict[str, Any], exit_price: float,
         header,
         "\u2500" * 25,
         f"\U0001f4cc <b>Trade:</b> #{sig_id} \u2022 <b>{sym} {direction}</b>",
-        f"\U0001f4b5 <b>Exit Price:</b> {fp(exit_price)}",
+        f"\U0001f6e1\ufe0f <b>Exit Level:</b> {fp(exit_price)}",
         f"\U0001f4ca <b>Result:</b> {res_str}",
         pnl_badge,
         "\u2500" * 25,

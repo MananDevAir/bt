@@ -18,7 +18,12 @@ from typing import Any
 from ..config import Config
 from ..store import signals as sig_store
 from ..logging_util import log_outcome
-from ..alerts.formatter import format_tp_update, format_sl_update, format_expiry_update
+from ..alerts.formatter import (
+    format_tp_update,
+    format_sl_update,
+    format_expiry_update,
+    _fmt_price,
+)
 from ..alerts.telegram import send_text
 from ..data.live_price import get_live_price
 from .streaks import update_streak
@@ -118,12 +123,15 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         outcome = dict(_row) if _row is not None else None
         entry_filled = outcome["entry_filled"] if outcome else 0
 
+        just_filled = False
         if not entry_filled:
             # Check if price reached entry zone
             if direction > 0 and low <= sig["entry_high"]:
                 entry_filled = 1
+                just_filled = True
             elif direction < 0 and high >= sig["entry_low"]:
                 entry_filled = 1
+                just_filled = True
 
             if entry_filled:
                 conn.execute(
@@ -149,13 +157,18 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
             _update_outcome(conn, signal_id, "open", now_ms, price=price)
             continue
 
-        # Calculate MFE/MAE using high/low for true excursion
+        # On the exact candle where a limit order is filled, the bar's pre-entry wick
+        # occurred before entering and cannot be counted towards post-entry TP excursion.
+        eval_high = price if (just_filled and direction > 0) else high
+        eval_low = price if (just_filled and direction < 0) else low
+
+        # Calculate MFE/MAE using true post-entry excursion
         if direction > 0:
-            mfe = max(0, (high - entry_mid) / risk)   # best case: candle high
-            mae = max(0, (entry_mid - low) / risk)    # worst case: candle low
+            mfe = max(0, (eval_high - entry_mid) / risk)
+            mae = max(0, (entry_mid - low) / risk)
         else:
-            mfe = max(0, (entry_mid - low) / risk)    # best case: candle low
-            mae = max(0, (high - entry_mid) / risk)   # worst case: candle high
+            mfe = max(0, (entry_mid - eval_low) / risk)
+            mae = max(0, (high - entry_mid) / risk)
 
         # Update running MFE/MAE
         old_mfe = outcome["mfe_r"] if outcome and outcome["mfe_r"] else 0
@@ -214,7 +227,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit="sl_after_tp2", mfe_r=new_mfe, mae_r=new_mae)
                 summary["won"] += 1
                 update_streak(conn, "won")
-                sl_msg = format_sl_update(sig, price, "trailed_tp1", "1.60", new_mfe)
+                sl_msg = format_sl_update(sig, tp1 if tp1 is not None else price, "trailed_tp1", "1.60", new_mfe)
                 hit_alerts.append((sl_msg, tg_msg_id))
                 log.info("Signal #%d SL hit at TP1 level after TP2 (%s)", signal_id, symbol)
             elif tp1_was_hit:
@@ -228,7 +241,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit="sl_after_tp1", mfe_r=new_mfe, mae_r=new_mae)
                 summary["won"] += 1
                 update_streak(conn, "won")
-                sl_msg = format_sl_update(sig, price, "breakeven", "0.50", new_mfe)
+                sl_msg = format_sl_update(sig, entry_mid if entry_mid is not None else price, "breakeven", "0.50", new_mfe)
                 hit_alerts.append((sl_msg, tg_msg_id))
                 log.info("Signal #%d SL hit at breakeven after TP1 (%s)", signal_id, symbol)
             else:
@@ -242,18 +255,18 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit="sl", mfe_r=new_mfe, mae_r=new_mae)
                 summary["lost"] += 1
                 update_streak(conn, "lost")
-                sl_msg = format_sl_update(sig, price, "loss", "-1.00", new_mfe)
+                sl_msg = format_sl_update(sig, sl, "loss", "-1.00", new_mfe)
                 hit_alerts.append((sl_msg, tg_msg_id))
                 log.info("Signal #%d SL hit at %.2f (%s)", signal_id, price, symbol)
             continue
 
         # Check TP hits (track individually with partial management)
         tp_hit = None
-        if tp3 and ((direction > 0 and high >= tp3) or (direction < 0 and low <= tp3)):
+        if tp3 and ((direction > 0 and eval_high >= tp3) or (direction < 0 and eval_low <= tp3)):
             tp_hit = "tp3"
-        elif tp2 and ((direction > 0 and high >= tp2) or (direction < 0 and low <= tp2)):
+        elif tp2 and ((direction > 0 and eval_high >= tp2) or (direction < 0 and eval_low <= tp2)):
             tp_hit = "tp2"
-        elif tp1 and ((direction > 0 and high >= tp1) or (direction < 0 and low <= tp1)):
+        elif tp1 and ((direction > 0 and eval_high >= tp1) or (direction < 0 and eval_low <= tp1)):
             tp_hit = "tp1"
 
         if tp_hit:
@@ -283,7 +296,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                                 hit=tp_hit, mfe_r=new_mfe, mae_r=new_mae)
                 summary["won"] += 1
                 update_streak(conn, "won")
-                tp_msg = format_tp_update(sig, "tp3", "3.0", price,
+                tp_msg = format_tp_update(sig, "tp3", "3.0", tp3,
                                           "Trade Closed (Target Met)", "100% Locked (+3.0R) \U0001f389")
                 hit_alerts.append((tp_msg, tg_msg_id))
                 log.info("Signal #%d TP3 hit at %.2f (%s) \u2014 FULL WIN",
@@ -294,11 +307,11 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                 # TP2 hit for the first time — trail SL to TP1 level and keep tracking for TP3
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
-                tp_msg = format_tp_update(sig, "tp2", "2.0", price,
-                                          f"SL Trailed to TP1 level ({tp1:,.2f})",
+                tp_msg = format_tp_update(sig, "tp2", "2.0", tp2,
+                                          f"SL Trailed to TP1 level ({_fmt_price(tp1, symbol)})",
                                           "80% Locked (Holding 20% for TP3)")
                 hit_alerts.append((tp_msg, tg_msg_id))
-                log.info("Signal #%d TP2 hit at %.2f (%s) \u2014 SL trailed to TP1, tracking TP3",
+                log.info("Signal #%d TP2 hit at %.2f (%s) — SL trailed to TP1, tracking TP3",
                          signal_id, price, symbol)
                 summary["still_open"] += 1
                 continue
@@ -307,8 +320,8 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                 # TP1 hit for the first time — move SL to breakeven
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
-                tp_msg = format_tp_update(sig, "tp1", "1.0", price,
-                                          f"SL Moved to Breakeven ({entry_mid:,.2f})",
+                tp_msg = format_tp_update(sig, "tp1", "1.0", tp1,
+                                          f"SL Moved to Breakeven ({_fmt_price(entry_mid, symbol)})",
                                           "50% Banked (Risk-Free Trade)")
                 hit_alerts.append((tp_msg, tg_msg_id))
                 log.info("Signal #%d TP1 hit at %.2f (%s) \u2014 SL moved to breakeven",

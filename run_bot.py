@@ -108,7 +108,7 @@ def cmd_status(cfg, conn):
             print(f"  {sym.name:10s}  {'---':>7s}  data incomplete")
             continue
 
-        signal = score_symbol(res.frames, sym.name, cfg)
+        signal = score_symbol(res.frames, sym.name, cfg, now=now)
         plan = generate_plan(signal, cfg)
 
         trade_type = plan.trade_type if plan else "\u2014"
@@ -231,21 +231,17 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
         except Exception as exc:
             _log.debug("Telegram polling error: %s", exc)
 
-        # 2. Check Sleep Window (12 AM - 5 AM IST)
+        # 2. Check Sleep Window (12 AM - 5 AM IST) — non-crypto symbols sleep, crypto runs 24/7
         sleep_cfg = cfg.get("sleep_window", default={}) or {}
-        is_sleeping = False
         IST = timezone(timedelta(hours=5, minutes=30))
         ist_now = datetime.now(IST)
         if sleep_cfg.get("enabled", False):
             start_h = int(sleep_cfg.get("start_hour_ist", 0))
             end_h = int(sleep_cfg.get("end_hour_ist", 5))
             if start_h <= ist_now.hour < end_h:
-                is_sleeping = True
+                _log.info("Night mode active (%02d:00-%02d:00 IST) — scanning 24/7 crypto & tracking open trades", start_h, end_h)
 
-        if is_sleeping:
-            _log.info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
-        else:
-            cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+        cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
 
         # 3. Process commands after scan
         try:
@@ -358,20 +354,16 @@ def main():
                 logging.getLogger(__name__).debug("Telegram polling skipped: %s", exc)
 
             sleep_cfg = cfg.get("sleep_window", default={}) or {}
-            is_sleeping = False
             IST = timezone(timedelta(hours=5, minutes=30))
             ist_now = datetime.now(IST)
             if sleep_cfg.get("enabled", False):
                 start_h = int(sleep_cfg.get("start_hour_ist", 0))
                 end_h = int(sleep_cfg.get("end_hour_ist", 5))
                 if start_h <= ist_now.hour < end_h:
-                    is_sleeping = True
-                    
-            if is_sleeping:
-                import logging
-                logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
-            else:
-                cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
+                    import logging
+                    logging.getLogger(__name__).info("Night mode active (%02d:00-%02d:00 IST) — scanning 24/7 crypto & tracking open trades", start_h, end_h)
+
+            cmd_scan_once(cfg, conn, live=True, update_outcomes=True)
 
             # Check if any new commands arrived during the scan
             try:

@@ -415,3 +415,35 @@ def test_scoring_an_unknown_symbol_name_uses_global_thresholds(cfg, frozen_frame
     expected = _expected_label(sig.score, watch, signal, strong)
     downgraded = any(v.get("action") == "downgrade" for v in sig.gates.values())
     assert sig.label == expected or downgraded
+
+
+def test_crypto_runs_24_7_during_night_mode(cfg):
+    """Crypto ('always') must never sleep, while non-crypto sleeps 12-5 AM IST."""
+    from datetime import datetime, timezone, timedelta
+    from src.scanner import _is_session_active
+
+    # 02:00 AM IST on Wednesday (within 12 AM - 5 AM IST sleep window)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    night_dt = datetime(2026, 9, 9, 2, 0, tzinfo=IST).astimezone(timezone.utc)
+
+    # Crypto (BTC, ETH, SOL, ZEC) runs 24/7
+    assert _is_session_active("always", night_dt, cfg) is True
+
+    # Non-crypto rests during night mode
+    assert _is_session_active("us_cash", night_dt, cfg) is False
+    assert _is_session_active("fx_week", night_dt, cfg) is False
+
+
+def test_non_crypto_active_outside_night_mode(cfg):
+    """Non-crypto is active when market hours are open outside night mode."""
+    from datetime import datetime, timezone, timedelta
+    from src.scanner import _is_session_active
+
+    # 07:00 PM IST on Wednesday (13:30 UTC -> US cash open)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    day_dt = datetime(2026, 9, 9, 19, 0, tzinfo=IST).astimezone(timezone.utc)
+
+    assert _is_session_active("always", day_dt, cfg) is True
+    assert _is_session_active("us_cash", day_dt, cfg) is True
+    assert _is_session_active("fx_week", day_dt, cfg) is True
+

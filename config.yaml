@@ -153,8 +153,11 @@ exchange_fallbacks: [bybit, okx, kraken]
 scan_interval_minutes: 15
 db_path: "data/bot.db"
 
-# Sleep window (Timezone: IST) - bot will not scan for new signals during this time
+# Sleep window (Timezone: IST) - applied ONLY to non-crypto assets (Forex/Indices/Gold)
+# Crypto assets (BTC, ETH, SOL, ZEC with session: always) run 24/7/365 without break
 sleep_window:
   enabled: true
-  start_hour_ist: 0   # 12:00 AM
-  end_hour_ist: 5     # 05:00 AM
+  start_hour_ist: 0   # 12:00 AM IST
+  end_hour_ist: 5     # 05:00 AM IST
+  crypto_24_7: true   # Crypto assets bypass sleep window completely
+

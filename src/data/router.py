@@ -78,9 +78,19 @@ class Router:
         # Try primary source
         success = self._try_source(sym.primary, sym, res, open_now, now)
 
-        # If primary failed, try fallback
-        if not success:
-            res.note(f"primary {sym.primary.source} failed, trying fallback {sym.fallback.source}")
+        # Check if any timeframe is missing or has shallow history (< 20 bars on 1w, < 50 on others)
+        min_bars_needed = {"1w": 20, "1d": 50, "4h": 50, "1h": 50, "15m": 50}
+        has_shallow_or_missing = any(
+            tf not in res.frames or len(res.frames[tf]) < min_bars_needed.get(tf, 20)
+            for tf in self.cfg.timeframes
+        )
+
+        # If primary failed or left shallow/missing timeframes, try fallback
+        if not success or has_shallow_or_missing:
+            if not success:
+                res.note(f"primary {sym.primary.source} failed, trying fallback {sym.fallback.source}")
+            else:
+                res.note(f"filling shallow/missing timeframes from fallback {sym.fallback.source}")
             self._try_source(sym.fallback, sym, res, open_now, now)
 
         # Fill any gaps from cache
@@ -141,15 +151,17 @@ class Router:
     def _tfs_needing_fetch(self, sym: Symbol, res: FetchResult,
                            now: datetime | None = None) -> list[str]:
         """Return only timeframes that actually need a fresh HTTP fetch."""
+        min_bars_needed = {"1w": 20, "1d": 50, "4h": 50, "1h": 50, "15m": 50}
         need: list[str] = []
         for tf in self.cfg.timeframes:
-            if tf in res.frames and not res.frames[tf].empty:
+            min_wanted = min_bars_needed.get(tf, 20)
+            if tf in res.frames and len(res.frames[tf]) >= min_wanted:
                 continue
             if self._is_cache_fresh(sym.name, tf, now):
                 # Serve from cache instead of fetching
                 cached = cache.load(self.conn, sym.name, tf,
                                     self.cfg.history.get(tf, 300))
-                if not cached.empty:
+                if len(cached) >= min_wanted:
                     res.frames[tf] = cached
                     continue
             need.append(tf)
@@ -183,8 +195,10 @@ class Router:
             for fut in as_completed(futures):
                 tf, df = fut.result()
                 if not df.empty:
-                    res.frames[tf] = df
-                    cache.save(self.conn, sym.name, tf, df)
+                    existing_len = len(res.frames[tf]) if tf in res.frames else 0
+                    if len(df) >= existing_len:
+                        res.frames[tf] = df
+                        cache.save(self.conn, sym.name, tf, df)
 
     # ------------------------------------------------------------------ #
     # Source-specific fetchers (now with freshness + parallel)

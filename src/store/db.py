@@ -111,6 +111,13 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     except Exception:
         pass
 
+    # Auto-migration: clean legacy corrupted candle rows from pre-fix runs (ts < 1e12 ms)
+    try:
+        conn.execute("DELETE FROM candles WHERE ts < 1000000000000")
+        conn.commit()
+    except Exception:
+        pass
+
     conn.commit()
     return conn
 

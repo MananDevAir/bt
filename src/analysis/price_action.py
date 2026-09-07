@@ -88,9 +88,9 @@ def candle_patterns(df: pd.DataFrame, atr_series: pd.Series | None = None,
             prev_body_lo = min(o[i - 1], c[i - 1])
             curr_body_hi = max(o[i], c[i])
             curr_body_lo = min(o[i], c[i])
-            prev_bull = c[i - 1] > o[i - 1]
+            opposite_or_doji = (c[i - 1] <= o[i - 1]) if bull else (c[i - 1] >= o[i - 1])
             if (curr_body_hi > prev_body_hi and curr_body_lo < prev_body_lo
-                    and bull != prev_bull and body > 0.3 * a[i]):
+                    and opposite_or_doji and body > 0.3 * a[i]):
                 bias = +1 if bull else -1
                 strength = min(1.0, body / a[i])
                 found.append(CandlePattern("engulfing", bias, i, ts, strength))
@@ -185,28 +185,22 @@ def support_resistance(df: pd.DataFrame, left: int = 3, right: int = 3,
 
     current_price = float(df["close"].iloc[-1])
 
-    # Collect all pivot prices
-    pivot_prices = [(p.price, p.kind) for p in pv]
-
-    # Sort by price
-    pivot_prices.sort(key=lambda x: x[0])
-
-    # Cluster nearby pivots
-    clusters: list[list[tuple[float, str]]] = []
-    for pp in pivot_prices:
+    # Cluster pivots chronologically so grouping is invariant under vertical reflection
+    clusters: list[list[Pivot]] = []
+    for p in pv:
         merged = False
         for cluster in clusters:
-            cluster_mid = sum(p[0] for p in cluster) / len(cluster)
-            if abs(pp[0] - cluster_mid) <= merge_dist:
-                cluster.append(pp)
+            cluster_mid = sum(x.price for x in cluster) / len(cluster)
+            if abs(p.price - cluster_mid) <= merge_dist:
+                cluster.append(p)
                 merged = True
                 break
         if not merged:
-            clusters.append([pp])
+            clusters.append([p])
 
     zones: list[SRZone] = []
     for cluster in clusters:
-        prices = [p[0] for p in cluster]
+        prices = [p.price for p in cluster]
         lo, hi = min(prices), max(prices)
         mid = sum(prices) / len(prices)
         touches = len(cluster)

@@ -40,10 +40,25 @@ SESSION_WINDOWS: dict[str, tuple[int, int] | None] = {
 }
 
 
-def _is_session_active(session: str, now: datetime) -> bool:
-    """Check if a symbol's market session is currently active."""
+def _is_session_active(session: str, now: datetime, cfg: Config | None = None) -> bool:
+    """Check if a symbol's market session is currently active.
+
+    Crypto assets (session == 'always') run 24/7/365 without sleep window interruption.
+    Non-crypto assets observe both their market session and the 12 AM - 5 AM IST sleep window.
+    """
     if session == "always":
         return True
+
+    # Non-crypto assets: check sleep window (12:00 AM - 5:00 AM IST)
+    if cfg is not None:
+        sleep_cfg = cfg.get("sleep_window", default={}) or {}
+        if sleep_cfg.get("enabled", False):
+            IST = timezone(timedelta(hours=5, minutes=30))
+            ist_now = now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=timezone.utc).astimezone(IST)
+            start_h = int(sleep_cfg.get("start_hour_ist", 0))
+            end_h = int(sleep_cfg.get("end_hour_ist", 5))
+            if start_h <= ist_now.hour < end_h:
+                return False
 
     if session == "fx_week":
         # Active Sun 21:00 UTC through Fri 21:00 UTC
@@ -129,9 +144,9 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
     }
 
     for sym in cfg.symbols:
-        # Session check
-        if not _is_session_active(sym.session, now):
-            log.debug("Skipping %s — session %s not active", sym.name, sym.session)
+        # Session check (crypto runs 24/7; non-crypto respects night mode & market hours)
+        if not _is_session_active(sym.session, now, cfg):
+            log.debug("Skipping %s — session %s or night mode inactive", sym.name, sym.session)
             continue
 
         # Check if symbol is temporarily muted (via Telegram /mute command)
@@ -183,7 +198,7 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
             summary["symbols_scanned"] += 1
 
             # Score
-            signal = score_symbol(res.frames, sym.name, cfg)
+            signal = score_symbol(res.frames, sym.name, cfg, now=now)
             summary["scores"][sym.name] = round(signal.score, 1)
 
             # Apply streak-based threshold adjustment

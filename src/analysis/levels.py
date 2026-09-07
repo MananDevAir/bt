@@ -195,11 +195,22 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     else:
         grade = "B"
 
+    # Ensure entry_lo < entry_mid < entry_hi survives rounding
+    entry_dec = _decimals(entry_mid)
+    r_lo = round(entry_lo, entry_dec)
+    r_mid = round(entry_mid, entry_dec)
+    r_hi = round(entry_hi, entry_dec)
+    tick = 10 ** (-entry_dec)
+    if r_lo >= r_mid:
+        r_lo = round(r_mid - tick, entry_dec)
+    if r_hi <= r_mid:
+        r_hi = round(r_mid + tick, entry_dec)
+
     return TradePlan(
         direction=direction,
-        entry_low=round(entry_lo, _decimals(entry_mid)),
-        entry_high=round(entry_hi, _decimals(entry_mid)),
-        entry_mid=round(entry_mid, _decimals(entry_mid)),
+        entry_low=r_lo,
+        entry_high=r_hi,
+        entry_mid=r_mid,
         sl=round(sl, _decimals(sl)),
         tp1=round(tp1, _decimals(tp1)),
         tp2=round(tp2, _decimals(tp2)),
@@ -253,7 +264,14 @@ def _find_entry(signal: SignalResult, direction: int, close: float,
             if ob.direction == direction:
                 dist = abs(close - (ob.hi + ob.lo) / 2) / atr_val
                 if dist < 3.0:  # within 3 ATR
-                    return (ob.hi + ob.lo) / 2, ob.lo, ob.hi, "order_block"
+                    mid = (ob.hi + ob.lo) / 2
+                    lo = ob.lo
+                    hi = ob.hi
+                    if hi - lo < 0.2 * atr_val:
+                        band = 0.15 * atr_val
+                        lo = mid - band
+                        hi = mid + band
+                    return mid, lo, hi, "order_block"
 
     # Priority 2: nearest open FVG in signal direction
     for tf in entry_tfs:
@@ -264,7 +282,14 @@ def _find_entry(signal: SignalResult, direction: int, close: float,
             if fvg.direction == direction:
                 dist = abs(close - (fvg.hi + fvg.lo) / 2) / atr_val
                 if dist < 3.0:
-                    return (fvg.hi + fvg.lo) / 2, fvg.lo, fvg.hi, "fvg"
+                    mid = (fvg.hi + fvg.lo) / 2
+                    lo = fvg.lo
+                    hi = fvg.hi
+                    if hi - lo < 0.2 * atr_val:
+                        band = 0.15 * atr_val
+                        lo = mid - band
+                        hi = mid + band
+                    return mid, lo, hi, "fvg"
 
     # Priority 3: Fibonacci OTE (0.618-0.705)
     for tf in entry_tfs:
