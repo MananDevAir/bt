@@ -251,15 +251,21 @@ def detect_order_blocks(df: pd.DataFrame, bos_list: list[BOS] | None = None,
         if disp_atr < 0.5:
             continue
 
-        # Check mitigation: has price returned to the OB zone after formation?
+        # Check mitigation: has price returned to the OB zone BODY-close after formation?
+        # Using wick touch (l[k] <= ob_hi) was too aggressive — every BTC OB was
+        # instantly "mitigated" by a wick, making order_blocks_unmitigated always empty
+        # and forcing the entry finder into worst-case market entry every time.
+        # Fix: require a candle body (min(open,close)) to actually close inside the zone.
         mitigated = False
         for k in range(ob_idx + 1, len(df)):
             if bos.direction > 0:  # bullish OB: demand zone
-                if l[k] <= ob_hi:  # price dipped back into the zone
+                body_lo = min(o[k], c[k])
+                if body_lo <= ob_hi:  # body closed into the zone — genuinely mitigated
                     mitigated = True
                     break
             else:  # bearish OB: supply zone
-                if h[k] >= ob_lo:  # price rallied back into the zone
+                body_hi = max(o[k], c[k])
+                if body_hi >= ob_lo:  # body closed into the zone — genuinely mitigated
                     mitigated = True
                     break
 
@@ -354,10 +360,11 @@ class LiquiditySweep:
     swept_level: float
     direction: int        # +1 swept lows (bullish reversal signal), -1 swept highs (bearish)
     wick_beyond: float    # how far the wick went past the level
+    is_equal_level_sweep: bool = False # True if the sweep took out an equal highs/lows pool
 
 
-def detect_liquidity_sweeps(df: pd.DataFrame, left: int = 3,
-                            right: int = 3) -> list[LiquiditySweep]:
+def detect_liquidity_sweeps(df: pd.DataFrame, equal_levels: list[EqualLevel] | None = None,
+                            left: int = 3, right: int = 3) -> list[LiquiditySweep]:
     """Detect liquidity sweeps: wick pierces a prior swing then closes back inside.
 
     A sweep of lows is a bullish signal (stops were hunted, smart money loaded).
@@ -393,12 +400,26 @@ def detect_liquidity_sweeps(df: pd.DataFrame, left: int = 3,
         # If both swept (dual wick) -> neutral (omit to maintain bar symmetry)
         if swept_sh and not swept_sl:
             best_sh = max(swept_sh, key=lambda s: s.price)
+            # Check if this swept an equal highs pool
+            is_eq = False
+            if equal_levels:
+                for eq in equal_levels:
+                    if eq.kind == "equal_highs" and abs(best_sh.price - eq.price) / best_sh.price < 0.005:
+                        is_eq = True
+                        break
             sweeps.append(LiquiditySweep(
-                i, df.index[i], best_sh.price, -1, h[i] - best_sh.price))
+                i, df.index[i], best_sh.price, -1, h[i] - best_sh.price, is_eq))
         elif swept_sl and not swept_sh:
             best_sl = min(swept_sl, key=lambda s: s.price)
+            # Check if this swept an equal lows pool
+            is_eq = False
+            if equal_levels:
+                for eq in equal_levels:
+                    if eq.kind == "equal_lows" and abs(best_sl.price - eq.price) / best_sl.price < 0.005:
+                        is_eq = True
+                        break
             sweeps.append(LiquiditySweep(
-                i, df.index[i], best_sl.price, +1, best_sl.price - l[i]))
+                i, df.index[i], best_sl.price, +1, best_sl.price - l[i], is_eq))
 
     return sweeps[-10:]
 
@@ -514,8 +535,8 @@ def smc_scan(df: pd.DataFrame, left: int = 3, right: int = 3) -> dict:
     bos_list = detect_bos(df, struct, left, right)
     obs = detect_order_blocks(df, bos_list)
     fvgs = detect_fvg(df)
-    sweeps = detect_liquidity_sweeps(df, left, right)
     eq = detect_equal_levels(df, 0.1, left, right)
+    sweeps = detect_liquidity_sweeps(df, eq, left, right)
     pd_zone = premium_discount(df)
 
     # Derive overall bias from structure

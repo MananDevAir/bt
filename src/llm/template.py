@@ -71,6 +71,8 @@ def build_fact_sheet(signal: Any, plan: Any | None = None) -> dict[str, Any]:
 
     This is shared by both the LLM prompt builder and the template.
     """
+    from ..alerts.formatter import _fmt_price
+    
     facts: dict[str, Any] = {
         "symbol": signal.symbol,
         "direction": signal.direction,
@@ -111,29 +113,36 @@ def build_fact_sheet(signal: Any, plan: Any | None = None) -> dict[str, Any]:
 
     # Price Action & SMC Context (Aggregate from Timeframes)
     pa_context = {}
+    price = plan.entry_mid if plan else getattr(signal, "close_price", 0)
+    
+    def _rel(level: float) -> str:
+        if not price: return ""
+        return " (above price)" if level > price else " (below price)"
+
     for tf, tfr in signal.tf_results.items():
         tf_pa = {}
         if getattr(tfr, "pa", None):
             sr_zones = [
-                f"{sr.kind} at {sr.mid:,.2f}" for sr in tfr.pa.get("sr_zones", [])[:2]
+                f"{sr.kind} at {_fmt_price(sr.mid, signal.symbol)}{_rel(sr.mid)}" 
+                for sr in tfr.pa.get("sr_zones", [])[:2]
             ]
             if sr_zones:
                 tf_pa["support_resistance"] = sr_zones
         if getattr(tfr, "smc", None):
             obs = [
-                f"{'bullish' if ob.direction > 0 else 'bearish'} OB at {ob.lo:,.2f}-{ob.hi:,.2f}"
+                f"{'bullish' if ob.direction > 0 else 'bearish'} OB at {_fmt_price(ob.lo, signal.symbol)}-{_fmt_price(ob.hi, signal.symbol)}{_rel((ob.lo + ob.hi)/2)}"
                 for ob in tfr.smc.get("order_blocks_unmitigated", [])[:2]
             ]
             if obs:
                 tf_pa["unmitigated_order_blocks"] = obs
             fvgs = [
-                f"{'bullish' if fvg.direction > 0 else 'bearish'} FVG at {fvg.lo:,.2f}-{fvg.hi:,.2f} ({fvg.filled_pct:.0%} filled)"
+                f"{'bullish' if fvg.direction > 0 else 'bearish'} FVG at {_fmt_price(fvg.lo, signal.symbol)}-{_fmt_price(fvg.hi, signal.symbol)}{_rel((fvg.lo + fvg.hi)/2)} ({fvg.filled_pct:.0%} filled)"
                 for fvg in tfr.smc.get("fvg_open", [])[:2]
             ]
             if fvgs:
                 tf_pa["open_fvgs"] = fvgs
             sweeps = [
-                f"{'bullish' if sw.direction > 0 else 'bearish'} sweep at {sw.swept_level:,.2f}"
+                f"{'bullish' if sw.direction > 0 else 'bearish'} sweep at {_fmt_price(sw.swept_level, signal.symbol)}{_rel(sw.swept_level)}"
                 for sw in tfr.smc.get("liquidity_sweeps", [])[-2:]
             ]
             if sweeps:
@@ -154,12 +163,12 @@ def build_fact_sheet(signal: Any, plan: Any | None = None) -> dict[str, Any]:
     # Trade plan levels
     if plan is not None:
         facts.update({
-            "entry_low": round(plan.entry_low, 2),
-            "entry_high": round(plan.entry_high, 2),
-            "sl": round(plan.sl, 2),
-            "tp1": round(plan.tp1, 2),
-            "tp2": round(plan.tp2, 2),
-            "tp3": round(plan.tp3, 2),
+            "entry_low": plan.entry_low,
+            "entry_high": plan.entry_high,
+            "sl": plan.sl,
+            "tp1": plan.tp1,
+            "tp2": plan.tp2,
+            "tp3": plan.tp3,
             "rr": round(plan.rr, 2),
             "risk_pct": round(plan.risk_pct, 2),
             "risk_atr": round(plan.risk_atr, 1),

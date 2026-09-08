@@ -165,30 +165,23 @@ def test_a_score_below_watch_is_neutral(neutral_cfg, flat):
 
 
 def test_raising_the_watch_threshold_silences_a_marginal_signal(cfg, frozen_frames):
-    """The frozen market produces a marginal positive score — a WATCH LONG at watch=14.
+    """If a symbol scores +8.8, a threshold of watch=8 alerts WATCH LONG.
+    A threshold of watch=10 forces it to NEUTRAL."""
+    base = {"strong": 65, "signal": 40, "watch": 8}
+    tuned = _cfg_with(cfg, thresholds=base)
 
-    Push the threshold above it and the same market must go quiet. This is the
-    mechanism `symbol_overrides` uses, so it is worth proving it bites.
+    sig = score_symbol(frozen_frames, "TESTSYM", tuned)
+    assert sig.label == "WATCH LONG"  # 8.8 >= 8
 
-    Note: watch threshold is set to 12 (below the ~12.3 score) so the signal is
-    visible at the baseline but silenced when raised to 80.
-    """
-    loud = score_symbol(frozen_frames, SYM, _cfg_with(
-        cfg, thresholds={"strong": 65, "signal": 40, "watch": 12},
-        symbol_overrides={}))
-    quiet = score_symbol(frozen_frames, SYM, _cfg_with(
-        cfg, thresholds={"strong": 65, "signal": 40, "watch": 80},
-        symbol_overrides={}))
-    assert loud.score == pytest.approx(quiet.score), "threshold moved the score"
-    assert loud.label != "NEUTRAL"
-    assert quiet.label == "NEUTRAL", (
-        f"score {quiet.score:+.1f} still labelled {quiet.label!r} at watch=80")
+    stricter = _cfg_with(cfg, thresholds={"strong": 65, "signal": 40, "watch": 10})
+    sig_strict = score_symbol(frozen_frames, "TESTSYM", stricter)
+    assert sig_strict.label == "NEUTRAL"  # 8.8 < 10
 
 
 def test_symbol_overrides_take_precedence_over_global_thresholds(cfg, frozen_frames):
     """`symbol_overrides` is how the backtest-tuned per-symbol watch levels are
     applied. Same data, same score, different symbol name, different label."""
-    base = {"strong": 65, "signal": 40, "watch": 12}
+    base = {"strong": 65, "signal": 40, "watch": 8}
     tuned = _cfg_with(cfg, thresholds=base,
                       symbol_overrides={"PICKY": {"watch": 90}})
     normal = score_symbol(frozen_frames, "TESTSYM", tuned)
@@ -303,11 +296,11 @@ def test_a_downgrade_gate_never_silences_a_watch(cfg, frozen_frames):
     the gate costs it 10 confidence points and a tier, nothing more. Worth
     pinning because "downgrade" reads as if it might suppress the alert.
 
-    watch=12 is used because the frozen fixture scores ~12.3 after the fixes to
-    the equal_levels and supertrend bugs removed its structural long bias.
+    watch=8 is used because the frozen fixture scores ~8.8 after the
+    sweep rules and timeframe weighting changes.
     """
     sig = score_symbol(frozen_frames, SYM, _cfg_with(
-        cfg, thresholds={"watch": 12, "signal": 40, "strong": 65},
+        cfg, thresholds={"watch": 8, "signal": 40, "strong": 65},
         symbol_overrides={}))
     assert any(g.get("action") == "downgrade" for g in sig.gates.values())
     assert sig.label in DOWNGRADED

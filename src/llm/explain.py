@@ -143,7 +143,7 @@ def _call_hf(token: str, model: str, prompt: str,
                     return None
 
                 # Strip any leaked <think>...</think> tags from content
-                content = re.sub(r"<think>.*?</think>", "", content,
+                content = re.sub(r"<think>.*?(?:</think>|$)", "", content,
                                  flags=re.DOTALL).strip()
 
                 if not content:
@@ -185,8 +185,8 @@ def _validate_reply(reply: str, facts: dict[str, Any]) -> bool:
     lower = reply.lower()
 
     # Reject preamble or markdown header clutter
-    if "###" in reply or "trade overview" in lower or "sure," in lower:
-        log.warning("LLM reply contains header/preamble clutter, rejecting")
+    if "###" in reply or "**" in reply or "trade overview" in lower or "sure," in lower:
+        log.warning("LLM reply contains header/markdown clutter, rejecting")
         return False
 
     stripped = lower.strip()
@@ -223,15 +223,16 @@ def _build_user_prompt(facts: dict[str, Any]) -> str:
 
 
 # Simple in-memory cache: (symbol, direction, score_bucket) -> (text, ts)
-_cache: dict[tuple[str, int, int], tuple[str, float]] = {}
+_cache: dict[tuple[str, int, float, float], tuple[str, float]] = {}
 CACHE_TTL = 4 * 3600  # 4 hours
 
 
-def _cache_key(facts: dict[str, Any]) -> tuple[str, int, int]:
+def _cache_key(facts: dict[str, Any]) -> tuple[str, int, float, float]:
     sym = facts.get("symbol", "?")
     direction = int(facts.get("direction", 0))
-    score_bucket = int(facts.get("score", 0)) // 10  # group by 10-point bands
-    return (sym, direction, score_bucket)
+    score = float(facts.get("score", 0))
+    entry = float(facts.get("entry_mid", 0) or facts.get("entry_low", 0))
+    return (sym, direction, score, entry)
 
 
 # Daily call counter (resets on day change)

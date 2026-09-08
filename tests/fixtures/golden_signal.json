@@ -1,5 +1,5 @@
 {
-  "confidence": 65.5,
+  "confidence": 58.9,
   "direction": 1,
   "gate_passed": true,
   "gates": {
@@ -9,27 +9,27 @@
     },
     "htf_conflict": {
       "action": "downgrade",
-      "detail": "HTF bias=bearish opposes signal"
+      "detail": "HTF confluence avg=-0.13 (bearish) opposes signal"
     }
   },
   "label": "NEUTRAL",
-  "max_possible": 1200.0,
+  "max_possible": 900.0,
   "plan": null,
-  "raw_score": 208.035048,
-  "score": 17.3,
+  "raw_score": 78.914952,
+  "score": 8.8,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {
       "regime": "normal",
       "structure_bias": "bearish",
-      "vote_count": 32,
-      "vote_sum": 6.91,
+      "vote_count": 31,
+      "vote_sum": 4.1,
       "votes": [
         {
           "category": "momentum",
           "detail": "bearish div on rsi (13 bars ago)",
           "name": "divergence",
-          "value": -0.32
+          "value": -0.28
         },
         {
           "category": "momentum",
@@ -39,9 +39,9 @@
         },
         {
           "category": "momentum",
-          "detail": "MACD histogram positive",
+          "detail": "MACD hist fading positive",
           "name": "macd",
-          "value": 0.7
+          "value": 0.45
         },
         {
           "category": "momentum",
@@ -63,21 +63,9 @@
         },
         {
           "category": "structure",
-          "detail": "BOS bear (continuation)",
-          "name": "bos",
-          "value": -0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
+          "detail": "CHoCH bear (trend shift)",
+          "name": "choch",
+          "value": -1.0
         },
         {
           "category": "structure",
@@ -90,6 +78,12 @@
           "detail": "equal lows @ 22,833 (below (support))",
           "name": "equal_levels",
           "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "EQUAL Sweep bear @ 23,070",
+          "name": "liquidity_sweep",
+          "value": -0.8
         },
         {
           "category": "structure",
@@ -222,14 +216,14 @@
     "1d": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 29,
-      "vote_sum": -2.77,
+      "vote_count": 26,
+      "vote_sum": -3.42,
       "votes": [
         {
           "category": "momentum",
-          "detail": "MACD histogram positive",
+          "detail": "MACD hist fading positive",
           "name": "macd",
-          "value": 0.7
+          "value": 0.45
         },
         {
           "category": "momentum",
@@ -257,30 +251,6 @@
         },
         {
           "category": "structure",
-          "detail": "BOS bear (continuation)",
-          "name": "bos",
-          "value": -0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bear (continuation)",
-          "name": "bos",
-          "value": -0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
           "detail": "equal highs @ 23,783 (above (resistance))",
           "name": "equal_levels",
           "value": -0.3
@@ -290,6 +260,12 @@
           "detail": "equal lows @ 21,715 (below (support))",
           "name": "equal_levels",
           "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "Sweep bear @ 22,554",
+          "name": "liquidity_sweep",
+          "value": -0.4
         },
         {
           "category": "structure",
@@ -404,14 +380,14 @@
     "1h": {
       "regime": "expanding",
       "structure_bias": "bullish",
-      "vote_count": 28,
-      "vote_sum": 8.13,
+      "vote_count": 27,
+      "vote_sum": 5.68,
       "votes": [
         {
           "category": "momentum",
-          "detail": "MACD histogram positive",
+          "detail": "MACD hist fading positive",
           "name": "macd",
-          "value": 0.7
+          "value": 0.45
         },
         {
           "category": "momentum",
@@ -427,21 +403,9 @@
         },
         {
           "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
+          "detail": "CHoCH bull (trend shift)",
+          "name": "choch",
+          "value": 1.0
         },
         {
           "category": "structure",
@@ -454,6 +418,12 @@
           "detail": "equal lows @ 22,411 (below (support))",
           "name": "equal_levels",
           "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "EQUAL Sweep bear @ 23,083",
+          "name": "liquidity_sweep",
+          "value": -0.8
         },
         {
           "category": "structure",
@@ -580,14 +550,14 @@
     "1w": {
       "regime": "quiet",
       "structure_bias": "bullish",
-      "vote_count": 31,
-      "vote_sum": 9.17,
+      "vote_count": 27,
+      "vote_sum": 7.32,
       "votes": [
         {
           "category": "momentum",
-          "detail": "MACD histogram positive",
+          "detail": "MACD hist fading positive",
           "name": "macd",
-          "value": 0.7
+          "value": 0.45
         },
         {
           "category": "momentum",
@@ -600,36 +570,6 @@
           "detail": "Stoch K < D",
           "name": "stoch",
           "value": -0.3
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bear (continuation)",
-          "name": "bos",
-          "value": -0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bear (continuation)",
-          "name": "bos",
-          "value": -0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
         },
         {
           "category": "structure",
@@ -648,6 +588,12 @@
           "detail": "equal lows @ 20,465 (below (support))",
           "name": "equal_levels",
           "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "EQUAL Sweep bear @ 22,946",
+          "name": "liquidity_sweep",
+          "value": -0.8
         },
         {
           "category": "structure",
@@ -774,20 +720,20 @@
     "4h": {
       "regime": "expanding",
       "structure_bias": "bearish",
-      "vote_count": 29,
-      "vote_sum": 3.33,
+      "vote_count": 27,
+      "vote_sum": 1.52,
       "votes": [
         {
           "category": "momentum",
           "detail": "bearish div on rsi (18 bars ago)",
           "name": "divergence",
-          "value": -0.32
+          "value": -0.08
         },
         {
           "category": "momentum",
-          "detail": "MACD histogram positive",
+          "detail": "MACD hist fading positive",
           "name": "macd",
-          "value": 0.7
+          "value": 0.45
         },
         {
           "category": "momentum",
@@ -809,27 +755,9 @@
         },
         {
           "category": "structure",
-          "detail": "BOS bear (continuation)",
-          "name": "bos",
-          "value": -0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
-        },
-        {
-          "category": "structure",
-          "detail": "BOS bull (continuation)",
-          "name": "bos",
-          "value": 0.8
+          "detail": "CHoCH bear (trend shift)",
+          "name": "choch",
+          "value": -1.0
         },
         {
           "category": "structure",
@@ -842,6 +770,12 @@
           "detail": "equal lows @ 22,095 (below (support))",
           "name": "equal_levels",
           "value": 0.3
+        },
+        {
+          "category": "structure",
+          "detail": "EQUAL Sweep bull @ 22,669",
+          "name": "liquidity_sweep",
+          "value": 0.8
         },
         {
           "category": "structure",

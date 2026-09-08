@@ -229,14 +229,30 @@ def _structure_votes(smc_data: dict, close_price: float = 0.0) -> list[Vote]:
     else:
         votes.append(Vote("structure_bias", "structure", 0.0, "neutral structure"))
 
-    # BOS and CHoCH
-    for bos in smc_data.get("bos", []):
-        if bos.kind == "CHOCH":
-            votes.append(Vote("choch", "structure", 1.0 * bos.direction,
-                              f"CHoCH {'bull' if bos.direction > 0 else 'bear'} (trend shift)"))
+    # BOS and CHoCH — ONLY the most recent event counts.
+    # Once a new BOS/CHoCH forms, all previous breaks are invalidated by definition.
+    # Summing all 10 historical breaks was the critical bug: a single recent bearish
+    # CHoCH was outvoted by 7 old bullish BOS bars, causing the bot to trade against
+    # the current structural regime.
+    bos_list = smc_data.get("bos", [])
+    if bos_list:
+        latest_bos = bos_list[-1]  # most recent break only
+        if latest_bos.kind == "choch":
+            votes.append(Vote("choch", "structure", 1.0 * latest_bos.direction,
+                              f"CHoCH {'bull' if latest_bos.direction > 0 else 'bear'} (trend shift)"))
         else:
-            votes.append(Vote("bos", "structure", 0.8 * bos.direction,
-                              f"BOS {'bull' if bos.direction > 0 else 'bear'} (continuation)"))
+            votes.append(Vote("bos", "structure", 0.8 * latest_bos.direction,
+                              f"BOS {'bull' if latest_bos.direction > 0 else 'bear'} (continuation)"))
+
+    # Liquidity Sweeps — massive signal, especially if sweeping equal highs/lows
+    sweeps = smc_data.get("liquidity_sweeps", [])
+    if sweeps:
+        latest_sweep = sweeps[-1]
+        weight = 0.8 if getattr(latest_sweep, 'is_equal_level_sweep', False) else 0.4
+        label_prefix = "EQUAL " if weight == 0.8 else ""
+        votes.append(Vote("liquidity_sweep", "structure", weight * latest_sweep.direction,
+                          f"{label_prefix}Sweep {'bull' if latest_sweep.direction > 0 else 'bear'} @ {latest_sweep.swept_level:,.0f}"))
+
 
     # Premium / Discount
     pd_zone = smc_data.get("premium_discount")
@@ -288,13 +304,20 @@ def _momentum_votes(last: pd.Series, mi_last: pd.Series,
         else:
             votes.append(Vote("rsi", "momentum", -0.3, f"RSI={rsi_val:.0f} below 50"))
 
-    # MACD histogram
+    # MACD histogram — BUG 14 fix: distinguish expanding vs fading momentum.
     hist = last["macd_hist"]
+    hist_prev_key = "macd_hist_prev"
+    hist_prev = float(last[hist_prev_key]) if hist_prev_key in last.index and not np.isnan(last[hist_prev_key]) else np.nan
     if not np.isnan(hist):
+        expanding = not np.isnan(hist_prev) and abs(hist) > abs(hist_prev)
         if hist > 0:
-            votes.append(Vote("macd", "momentum", +0.7, "MACD histogram positive"))
+            val = 0.9 if expanding else 0.45
+            votes.append(Vote("macd", "momentum", val,
+                              f"MACD hist {'expanding' if expanding else 'fading'} positive"))
         else:
-            votes.append(Vote("macd", "momentum", -0.7, "MACD histogram negative"))
+            val = -0.9 if expanding else -0.45
+            votes.append(Vote("macd", "momentum", val,
+                              f"MACD hist {'expanding' if expanding else 'fading'} negative"))
 
     # Stochastic
     k, d = last["stoch_k"], last["stoch_d"]
@@ -308,13 +331,14 @@ def _momentum_votes(last: pd.Series, mi_last: pd.Series,
         else:
             votes.append(Vote("stoch", "momentum", -0.3, "Stoch K < D"))
 
-    # Divergences (recency-weighted)
+    # Divergences (recency-weighted) — BUG 13 fix: remove 0.4 floor.
     for div in divs:
         bars = getattr(div, "bars_ago", 1)
-        decay = max(0.4, 1.0 - (bars / 20.0))
+        decay = max(0.0, 1.0 - (bars / 20.0))  # decays cleanly to 0 after 20 bars
         val = round(0.8 * div.bias * decay, 2)
-        votes.append(Vote("divergence", "momentum", val,
-                          f"{div.kind} div on {div.osc} ({bars} bars ago)"))
+        if val != 0.0:
+            votes.append(Vote("divergence", "momentum", val,
+                              f"{div.kind} div on {div.osc} ({bars} bars ago)"))
 
     # MFI
     mfi_val = mi_last.get("mfi", np.nan)
@@ -429,14 +453,18 @@ def _volume_votes(last: pd.Series, vp, mi_last: pd.Series,
         else:
             votes.append(Vote("obv_slope", "volume", -0.7, "OBV below EMA (distribution)"))
 
-    # Volume ratio & Climax — directional confirmation from candle close vs open
+    # Volume ratio & Climax — BUG 6 fix: when open_price=0 (common on Hyperliquid),
+    # the old EMA20 fallback almost always resolves bullish. Use neutral instead.
     vol_ratio = last.get("vol_ratio", np.nan)
     if not np.isnan(vol_ratio):
-        candle_dir = 1.0 if (open_price > 0 and close >= open_price) else (1.0 if close >= last.get("ema20", close) else -1.0)
-        if vol_ratio > 2.5:
+        if open_price > 0:
+            candle_dir = 1.0 if close >= open_price else -1.0
+        else:
+            candle_dir = 0.0  # open price missing — cannot determine direction safely
+        if vol_ratio > 2.5 and candle_dir != 0.0:
             votes.append(Vote("vol_climax", "volume", 0.7 * candle_dir,
                               f"ultra-high volume climax ({vol_ratio:.1f}x avg, {'bull' if candle_dir > 0 else 'bear'})"))
-        elif vol_ratio > 1.3:
+        elif vol_ratio > 1.3 and candle_dir != 0.0:
             votes.append(Vote("vol_spike", "volume", 0.5 * candle_dir,
                               f"volume expansion ({vol_ratio:.1f}x avg, {'bull' if candle_dir > 0 else 'bear'})"))
         elif vol_ratio < 0.5:
@@ -551,6 +579,30 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
 
     result.raw_score = raw_score
     result.max_possible = max_possible
+
+    # BUG 12 fix: apply dead-session score penalty BEFORE label mapping.
+    # Dead zones (asian_dead, weekend) get a 15% score reduction to raise the
+    # effective threshold — must happen here so the label reflects the adjusted score.
+    try:
+        from ..data.sessions import get_active_killzone, get_market_session
+        _cand_dts2 = []
+        for _f in frames.values():
+            if _f is not None and not _f.empty:
+                _li = _f.index[-1]
+                if hasattr(_li, "to_pydatetime"):
+                    _dt = _li.to_pydatetime()
+                    if _dt.tzinfo is None:
+                        from datetime import timezone as _tz
+                        _dt = _dt.replace(tzinfo=_tz.utc)
+                    _cand_dts2.append(_dt)
+        _now2 = max(_cand_dts2) if _cand_dts2 else None
+        _sess = get_market_session(_now2)
+        if _sess in ("asian_dead", "weekend"):
+            score = score * 0.85
+            score = max(-100.0, min(100.0, score))
+    except Exception:
+        pass
+
     result.score = round(score, 1)
     result.direction = +1 if score > 0 else (-1 if score < 0 else 0)
 
@@ -650,7 +702,7 @@ def score_symbol(frames: dict[str, pd.DataFrame], symbol_name: str,
         if kz:
             session_bonus = 4.0
         elif sess in ("asian_dead", "weekend"):
-            session_bonus = -4.0
+            session_bonus = -4.0  # confidence penalty only; score already adjusted above
         else:
             session_bonus = 0.0
     except Exception:
@@ -671,15 +723,20 @@ def _apply_gates(result: SignalResult, cfg: Config) -> dict[str, Any]:
     gates_cfg = cfg.get("gates", default={}) or {}
     gates: dict[str, Any] = {}
 
-    # 1. HTF conflict gate
+    # 1. HTF conflict gate — BUG 7 fix: use confluence vote average, not raw SMC pivot label.
+    # The old code used htf_result.smc.get("structure_bias") which reads the last HH/HL label.
+    # A 1D confluence score of -70 was ignored if the last pivot happened to label as HH.
+    # Fix: use the same vote-average logic used in confidence TF alignment checks.
     htf_tf = cfg.htf
     htf_result = result.tf_results.get(htf_tf)
-    if htf_result and htf_result.smc:
-        htf_bias_str = htf_result.smc.get("structure_bias", "neutral")
-        htf_bias = +1 if htf_bias_str == "bullish" else (-1 if htf_bias_str == "bearish" else 0)
+    if htf_result and htf_result.votes:
+        htf_avg = sum(v.value for v in htf_result.votes) / len(htf_result.votes)
+        htf_bias = +1 if htf_avg > 0.1 else (-1 if htf_avg < -0.1 else 0)
+        htf_bias_str = "bullish" if htf_bias > 0 else ("bearish" if htf_bias < 0 else "neutral")
         if htf_bias != 0 and htf_bias != result.direction:
             gates["htf_conflict"] = {
-                "action": "downgrade", "detail": f"HTF bias={htf_bias_str} opposes signal",
+                "action": "downgrade",
+                "detail": f"HTF confluence avg={htf_avg:+.2f} ({htf_bias_str}) opposes signal",
             }
             if result.label in ("BUY", "STRONG BUY", "SELL", "STRONG SELL"):
                 result.label = "WATCH LONG" if result.direction > 0 else "WATCH SHORT"
@@ -725,9 +782,10 @@ def _apply_gates(result: SignalResult, cfg: Config) -> dict[str, Any]:
     macro_tf = cfg.macro
     if macro_tf:
         macro_result = result.tf_results.get(macro_tf)
-        if macro_result and macro_result.smc:
-            macro_bias_str = macro_result.smc.get("structure_bias", "neutral")
-            macro_bias = +1 if macro_bias_str == "bullish" else (-1 if macro_bias_str == "bearish" else 0)
+        if macro_result and macro_result.votes:
+            macro_avg = sum(v.value for v in macro_result.votes) / len(macro_result.votes)
+            macro_bias = +1 if macro_avg > 0.1 else (-1 if macro_avg < -0.1 else 0)
+            macro_bias_str = "bullish" if macro_bias > 0 else ("bearish" if macro_bias < 0 else "neutral")
             if macro_bias != 0 and macro_bias != result.direction:
                 gates["macro_conflict"] = {
                     "action": "downgrade",

@@ -125,13 +125,17 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
 
         just_filled = False
         if not entry_filled:
-            # Check if price reached entry zone
-            if direction > 0 and low <= sig["entry_high"]:
-                entry_filled = 1
-                just_filled = True
-            elif direction < 0 and high >= sig["entry_low"]:
-                entry_filled = 1
-                just_filled = True
+            # BUG 11 fix: check entry fill against entry_mid (midpoint of OB/FVG zone),
+            # not entry_high. The old check triggered on any wick touching the zone top,
+            # inflating win rates since price may never have actually hit the ideal entry.
+            entry_mid_val = (sig["entry_low"] + sig["entry_high"]) / 2 if sig["entry_low"] and sig["entry_high"] else None
+            if entry_mid_val is not None:
+                if direction > 0 and low <= entry_mid_val:  # price dipped to zone midpoint
+                    entry_filled = 1
+                    just_filled = True
+                elif direction < 0 and high >= entry_mid_val:  # price rose to zone midpoint
+                    entry_filled = 1
+                    just_filled = True
 
             if entry_filled:
                 conn.execute(
@@ -211,9 +215,12 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
         else:
             active_sl = sl
 
-        # Check SL hit against active_sl
-        sl_hit_long = direction > 0 and low <= active_sl
-        sl_hit_short = direction < 0 and high >= active_sl
+        # BUG 10 fix: SL check uses candle CLOSE, not wick low/high.
+        # In crypto, wicks are extremely aggressive (BTC can wick 0.5-1% below support
+        # and immediately recover). Using wick-based SL was causing false losses.
+        # Professional traders use close-based stops; we do the same.
+        sl_hit_long = direction > 0 and price <= active_sl   # price = candle close
+        sl_hit_short = direction < 0 and price >= active_sl  # price = candle close
         
         if sl_hit_long or sl_hit_short:
             if tp2_was_hit:
@@ -316,7 +323,7 @@ def check_outcomes(conn: sqlite3.Connection, cfg: Config,
                 summary["still_open"] += 1
                 continue
 
-            elif tp_hit == "tp1" and not tp1_already:
+            elif tp_hit == "tp1" and not tp1_already and not tp2_already:
                 # TP1 hit for the first time — move SL to breakeven
                 _update_outcome(conn, signal_id, "open", now_ms,
                                 mfe_r=new_mfe, mae_r=new_mae, price=price)
@@ -363,7 +370,10 @@ def _update_outcome(conn: sqlite3.Connection, signal_id: int,
                     hit: str, checked_ts: int,
                     mfe_r: float = 0, mae_r: float = 0,
                     price: float | None = None,
-                    sl_hit_ts: int | None = None) -> None:
+                    sl_hit_ts: int | None = None,
+                    tp1_hit_ts: int | None = None,
+                    tp2_hit_ts: int | None = None,
+                    tp3_hit_ts: int | None = None) -> None:
     """Update the outcome tracking row."""
     _ensure_outcome_row(conn, signal_id)
 
@@ -382,6 +392,15 @@ def _update_outcome(conn: sqlite3.Connection, signal_id: int,
     if sl_hit_ts is not None:
         parts.append("sl_hit_ts = ?")
         vals.append(sl_hit_ts)
+    if tp1_hit_ts is not None:
+        parts.append("tp1_hit_ts = ?")
+        vals.append(tp1_hit_ts)
+    if tp2_hit_ts is not None:
+        parts.append("tp2_hit_ts = ?")
+        vals.append(tp2_hit_ts)
+    if tp3_hit_ts is not None:
+        parts.append("tp3_hit_ts = ?")
+        vals.append(tp3_hit_ts)
 
     vals.append(signal_id)
     sql = f"UPDATE outcomes SET {', '.join(parts)} WHERE signal_id = ?"

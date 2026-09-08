@@ -34,7 +34,6 @@ _BINANCE_MAP: dict[str, str] = {
 _HYPERLIQUID_MAP: dict[str, str] = {
     "US100": "xyz:XYZ100",
     "US500": "xyz:SP500",
-    "EURUSD": "xyz:EUR",
     "BTC": "BTC",
     "ETH": "ETH",
     "SOL": "SOL",
@@ -148,10 +147,10 @@ def _fetch_binance(ticker: str) -> dict[str, float] | None:
             if resp.status_code != 200:
                 continue
             data = resp.json()
-            if not data or len(data) < 2:
+            if not data:
                 continue
-            # Use the second-to-last candle (most recently closed)
-            candle = data[-2]
+            # Use the currently developing candle to capture live wicks
+            candle = data[-1]
             return {
                 "high": float(candle[2]),
                 "low": float(candle[3]),
@@ -188,7 +187,7 @@ def _fetch_yahoo(ticker: str) -> dict[str, float] | None:
         # Find the last valid non-None candle
         valid_indices = [i for i, c in enumerate(closes) if c is not None]
         if valid_indices:
-            idx = valid_indices[-2] if len(valid_indices) >= 2 else valid_indices[-1]
+            idx = valid_indices[-1]
             h = highs[idx] if idx < len(highs) and highs[idx] is not None else closes[idx]
             l = lows[idx] if idx < len(lows) and lows[idx] is not None else closes[idx]
             c = closes[idx]

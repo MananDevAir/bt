@@ -338,23 +338,11 @@ def send_signal(signal: Any, plan: Any | None,
             return True, None
         return True
 
-    # Build interactive quick action buttons
-    sym_name = signal.symbol
-    buttons = [
-        [{"text": f"⚡ {sym_name} Levels", "callback_data": f"/levels {sym_name}"},
-         {"text": f"🔇 Mute 4h", "callback_data": f"/mute {sym_name} 4"}],
-        [{"text": "📊 Live Status", "callback_data": "/status"},
-         {"text": "« Command Centre", "callback_data": "/help"}],
-    ]
-
     # Priority sound logic: Grade A+ alert sounds; routine/B silent if configured
     silent = False
 
-    # Send with buttons
-    result = send_message_with_buttons(msg, buttons, silent=silent)
-    if not result:
-        # Fallback to plain send_text if button payload fails
-        result = send_text(msg, silent=silent)
+    # Send without buttons
+    result = send_text(msg, silent=silent)
 
     if result:
         msg_id = result.get("result", {}).get("message_id")

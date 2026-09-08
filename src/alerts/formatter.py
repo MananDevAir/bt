@@ -167,10 +167,19 @@ def format_signal(signal: Any, plan: Any | None,
         lines.append(f"  TP3        {fp(plan.tp3)}  ({plan.tp_allocation[2]}%)")
         lines.append("")
         risk_atr_str = f" ({plan.risk_atr:.1f} ATR)" if hasattr(plan, "risk_atr") and plan.risk_atr > 0 else ""
-        lines.append(f"  R:R  <b>{plan.rr:.1f}</b>  |  Risk  {plan.risk_pct:.1f}%{risk_atr_str}")
+        risk_dist = abs(plan.entry_mid - plan.sl)
+        
+        risk_str = f"{plan.risk_pct:.1f}%"
+        if sym in ("EURUSD", "GBPUSD"):
+            pips = risk_dist / 0.0001
+            risk_str = f"{pips:.1f} pips"
+        elif sym in ("USDJPY",):
+            pips = risk_dist / 0.01
+            risk_str = f"{pips:.1f} pips"
+            
+        lines.append(f"  R:R  <b>{plan.rr:.1f}</b>  |  Risk  {risk_str}{risk_atr_str}")
 
         # Position sizing guide (1% risk on $10k reference equity)
-        risk_dist = abs(plan.entry_mid - plan.sl)
         if risk_dist > 0:
             risk_usd = 100.0
             if sym in ("EURUSD", "GBPUSD"):

@@ -57,22 +57,22 @@ symbols:
   - name: US30
     primary:  {source: yfinance,    ticker: "YM=F"}
     fallback: {source: twelvedata,  ticker: "DJI"}
-    session: fx_week
+    session: us_cash
 
 
   - name: EURUSD
-    primary:  {source: hyperliquid, ticker: "xyz:EUR"}
-    fallback: {source: yfinance,    ticker: "EURUSD=X"}
+    primary:  {source: yfinance,    ticker: "EURUSD=X"}
+    fallback: {source: twelvedata,  ticker: "EUR/USD"}
     session: fx_week
 
   - name: GBPUSD
-    primary:  {source: hyperliquid, ticker: "xyz:GBP"}
-    fallback: {source: yfinance,    ticker: "GBPUSD=X"}
+    primary:  {source: yfinance,    ticker: "GBPUSD=X"}
+    fallback: {source: twelvedata,  ticker: "GBP/USD"}
     session: fx_week
 
   - name: USDJPY
-    primary:  {source: hyperliquid, ticker: "xyz:JPY"}
-    fallback: {source: yfinance,    ticker: "USDJPY=X"}
+    primary:  {source: yfinance,    ticker: "USDJPY=X"}
+    fallback: {source: twelvedata,  ticker: "USD/JPY"}
     session: fx_week
 
 # how many closed candles we want per timeframe for analysis
@@ -87,12 +87,12 @@ history:
 weights: {trend: 30, structure: 30, momentum: 20, zones: 12, volume: 8}
 
 # timeframe influence on the final score
-tf_multiplier: {"1w": 4.0, "1d": 3.0, "4h": 2.0, "1h": 2.0, "15m": 1.0}
+tf_multiplier: {"1w": 2.0, "1d": 2.0, "4h": 2.0, "1h": 2.0, "15m": 1.0}
 
 thresholds:
   strong: 65
   signal: 40
-  watch: 18
+  watch: 14
 
 # Symbol-specific overrides (backtest-tuned)
 # Symbols with 50% or lower win rate at watch=18 get a stricter threshold
@@ -116,7 +116,7 @@ gates:
 risk:
   default_risk_pct: 1.0
   atr_stop_mult: 1.5
-  structure_stop_buffer_atr: 0.20
+  structure_stop_buffer_atr: 0.35
   tp_r_multiples: [1.0, 2.0, 3.0]
   tp_allocation: [50, 30, 20]
   snap_tolerance_atr: 0.30

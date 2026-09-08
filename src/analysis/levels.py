@@ -133,7 +133,27 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     tp2 = entry_mid + direction * tp_r_mults[1] * risk
     tp3 = entry_mid + direction * tp_r_mults[2] * risk
 
-    # Snap TPs to nearby structure levels
+    # BUG 4 guard: verify TPs are on the correct side of entry before snapping.
+    # If this fires it means the confluence engine produced an inverted plan
+    # (e.g. TP1 below entry on a LONG). Reject immediately.
+    if direction > 0 and (tp1 <= entry_mid or tp2 <= entry_mid or tp3 <= entry_mid):
+        signal.gates["inverted_plan"] = {
+            "action": "drop",
+            "detail": f"TP1={tp1:.4f} is not above entry={entry_mid:.4f} on LONG",
+        }
+        return None
+    if direction < 0 and (tp1 >= entry_mid or tp2 >= entry_mid or tp3 >= entry_mid):
+        signal.gates["inverted_plan"] = {
+            "action": "drop",
+            "detail": f"TP1={tp1:.4f} is not below entry={entry_mid:.4f} on SHORT",
+        }
+        return None
+
+    # BUG 9: Snap TP1 and TP2 to structure as well (tight tolerance so they
+    # don't get pulled too far from the original ATR multiples).
+    tp1 = _snap_to_structure(tp1, signal, direction, atr_val, snap_tol * 0.6, cfg=cfg)
+    tp2 = _snap_to_structure(tp2, signal, direction, atr_val, snap_tol * 0.7, cfg=cfg)
+    # Snap TPs to nearby structure levels (TP3 with full tolerance)
     tp3 = _snap_to_structure(tp3, signal, direction, atr_val, snap_tol, cfg=cfg)
 
     # R:R (measured to TP2)
@@ -166,11 +186,18 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     # Brief reason: why this signal was captured
     brief = _build_brief_reason(signal, direction, source)
 
+    cand_now = None
+    if ltf_result.raw_df is not None and not ltf_result.raw_df.empty:
+        try:
+            cand_now = ltf_result.raw_df.index[-1].to_pydatetime()
+        except Exception:
+            pass
+
     # Session & Killzone detection
     try:
         from ..data.sessions import get_active_killzone, get_market_session
-        sess_name = get_market_session()
-        kz_name = get_active_killzone() or ""
+        sess_name = get_market_session(cand_now)
+        kz_name = get_active_killzone(cand_now) or ""
     except Exception:
         sess_name = ""
         kz_name = ""
@@ -186,14 +213,25 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         entry_hi = min(entry_hi, sl - 0.05 * atr_val)
         entry_lo = max(entry_lo, tp1 + 0.05 * atr_val)
 
-    # Setup Quality Grade
+    # Setup Quality Grade — factors in score, confidence, entry source, and killzone.
+    # A market entry at 1.8 RR without a killzone is NOT the same as an OB entry
+    # at 1.8 RR during the London Open. Grade reflects setup precision.
     abs_score = abs(signal.score)
-    if abs_score >= 60 or (abs_score >= 45 and signal.confidence >= 75):
+    entry_quality_bump = source in ("order_block", "fvg", "bos_retest")  # precise entries
+    in_killzone = bool(kz_name)  # bonus for trading during high-volume killzone windows
+
+    if abs_score >= 60 or (abs_score >= 45 and signal.confidence >= 75 and entry_quality_bump):
         grade = "A+"
-    elif abs_score >= 38 or (abs_score >= 28 and signal.confidence >= 65):
+    elif abs_score >= 38 or (abs_score >= 28 and signal.confidence >= 65 and entry_quality_bump):
         grade = "A"
     else:
         grade = "B"
+    # Bump up one grade if actively in a killzone with a precise entry
+    if in_killzone and entry_quality_bump:
+        if grade == "B":
+            grade = "A"
+        elif grade == "A":
+            grade = "A+"
 
     # Ensure entry_lo < entry_mid < entry_hi survives rounding
     entry_dec = _decimals(entry_mid)

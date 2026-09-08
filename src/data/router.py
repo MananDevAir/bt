@@ -78,8 +78,8 @@ class Router:
         # Try primary source
         success = self._try_source(sym.primary, sym, res, open_now, now)
 
-        # Check if any timeframe is missing or has shallow history (< 20 bars on 1w, < 50 on others)
-        min_bars_needed = {"1w": 20, "1d": 50, "4h": 50, "1h": 50, "15m": 50}
+        # Check if any timeframe is missing or has shallow history (< 12 bars on 1w, < 50 on others)
+        min_bars_needed = {"1w": 12, "1d": 50, "4h": 50, "1h": 50, "15m": 50}
         has_shallow_or_missing = any(
             tf not in res.frames or len(res.frames[tf]) < min_bars_needed.get(tf, 20)
             for tf in self.cfg.timeframes

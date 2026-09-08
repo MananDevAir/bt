@@ -199,15 +199,24 @@ def support_resistance(df: pd.DataFrame, left: int = 3, right: int = 3,
             clusters.append([p])
 
     zones: list[SRZone] = []
+    total_bars = len(df)
     for cluster in clusters:
         prices = [p.price for p in cluster]
         lo, hi = min(prices), max(prices)
         mid = sum(prices) / len(prices)
         touches = len(cluster)
         kind = "support" if mid < current_price else "resistance"
-        # Strength: more touches = stronger, recency bonus
-        strength = min(1.0, 0.3 + 0.15 * touches)
+        # Strength: more touches = stronger + REAL recency bonus.
+        # Find how recently this zone was last tested (bars_ago from end of df).
+        most_recent_idx = max(p.idx for p in cluster)
+        bars_ago = total_bars - most_recent_idx - 1
+        # Recency decay: strength halves every 200 bars. Fresh zone (0 bars ago) = 1.0,
+        # 200 bars ago = 0.5, 400 bars ago = 0.25, etc.
+        recency_mult = max(0.15, 1.0 - (bars_ago / 200.0))
+        base_strength = min(1.0, 0.3 + 0.15 * touches)
+        strength = round(min(1.0, base_strength * recency_mult), 3)
         zones.append(SRZone(lo, hi, mid, kind, touches, "pivots", strength))
+
 
     # Sort by distance from current price (closest first)
     zones.sort(key=lambda z: abs(z.mid - current_price))

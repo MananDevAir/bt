@@ -181,8 +181,14 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
                     continue
                 last_ts = df.index[-1]
                 if hasattr(last_ts, 'timestamp'):
-                    age_s = (now - last_ts.to_pydatetime().replace(
-                        tzinfo=timezone.utc)).total_seconds()
+                    open_ts = last_ts.to_pydatetime().replace(tzinfo=timezone.utc)
+                    minutes = 0
+                    if tf.endswith("m"): minutes = int(tf[:-1])
+                    elif tf.endswith("h"): minutes = int(tf[:-1]) * 60
+                    elif tf.endswith("d"): minutes = int(tf[:-1]) * 1440
+                    elif tf.endswith("w"): minutes = int(tf[:-1]) * 10080
+                    close_ts = open_ts + timedelta(minutes=minutes)
+                    age_s = (now - close_ts).total_seconds()
                 else:
                     age_s = 0
                 max_age = tf_max_age_s.get(tf, 7200)
