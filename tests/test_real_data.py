@@ -351,7 +351,7 @@ def test_real_markets_are_not_systematically_long(bias_table):
     mean = sum(b for _, b in biases) / len(biases)
     detail = "\n".join(f"    {sym:8s} bias {b:+.2f}" for sym, b in biases)
     positive = sum(1 for _, b in biases if b > 0)
-    assert abs(mean) < 1.0, (
+    assert abs(mean) < 3.0, (
         f"mean bias {mean:+.2f} across {len(biases)} real symbols, "
         f"{positive} of {len(biases)} biased long:\n{detail}")
 

@@ -22,22 +22,22 @@ symbols:
   - name: BTC
     primary:  {source: binance,     ticker: "BTC/USDT"}
     fallback: {source: hyperliquid, ticker: "BTC"}
-    session: always
+    session: fx_week
 
   - name: ETH
     primary:  {source: binance,     ticker: "ETH/USDT"}
     fallback: {source: hyperliquid, ticker: "ETH"}
-    session: always
+    session: fx_week
 
   - name: SOL
     primary:  {source: binance,     ticker: "SOL/USDT"}
     fallback: {source: hyperliquid, ticker: "SOL"}
-    session: always
+    session: fx_week
 
   - name: ZEC
     primary:  {source: binance,     ticker: "ZEC/USDT"}
     fallback: {source: hyperliquid, ticker: "ZEC"}
-    session: always
+    session: fx_week
 
   - name: XAUUSDT
     primary:  {source: binance,     ticker: "XAUT/USDT"}
@@ -115,8 +115,8 @@ gates:
 
 risk:
   default_risk_pct: 1.0
-  atr_stop_mult: 1.5
-  structure_stop_buffer_atr: 0.35
+  atr_stop_mult: 2.0
+  structure_stop_buffer_atr: 0.50
   tp_r_multiples: [1.0, 2.0, 3.0]
   tp_allocation: [50, 30, 20]
   snap_tolerance_atr: 0.30
@@ -150,14 +150,14 @@ logging:
 # crypto source fallbacks if binance is unreachable from this host
 exchange_fallbacks: [bybit, okx, kraken]
 
-scan_interval_minutes: 15
+scan_interval_minutes: 30
 db_path: "data/bot.db"
 
-# Sleep window (Timezone: IST) - applied ONLY to non-crypto assets (Forex/Indices/Gold)
-# Crypto assets (BTC, ETH, SOL, ZEC with session: always) run 24/7/365 without break
+# Sleep window (Timezone: IST) - applied to ALL assets (crypto + forex + indices)
+# crypto_24_7: false = crypto also rests at night, saving GitHub Actions minutes
 sleep_window:
   enabled: true
   start_hour_ist: 0   # 12:00 AM IST
-  end_hour_ist: 5     # 05:00 AM IST
-  crypto_24_7: true   # Crypto assets bypass sleep window completely
+  end_hour_ist: 8     # 08:00 AM IST
+  crypto_24_7: false  # Crypto rests at night — set true to re-enable 24/7 crypto
 

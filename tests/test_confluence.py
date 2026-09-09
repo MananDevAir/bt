@@ -410,21 +410,37 @@ def test_scoring_an_unknown_symbol_name_uses_global_thresholds(cfg, frozen_frame
     assert sig.label == expected or downgraded
 
 
-def test_crypto_runs_24_7_during_night_mode(cfg):
-    """Crypto ('always') must never sleep, while non-crypto sleeps 12-5 AM IST."""
+def test_crypto_sleep_controlled_by_config(cfg):
+    """Crypto ('always') respects the sleep window based on crypto_24_7 config.
+
+    crypto_24_7=False (new default): crypto rests during the sleep window.
+    crypto_24_7=True  (legacy opt-in): crypto bypasses the sleep window.
+    Non-crypto always sleeps during the sleep window regardless.
+    """
     from datetime import datetime, timezone, timedelta
     from src.scanner import _is_session_active
+    import copy
 
-    # 02:00 AM IST on Wednesday (within 12 AM - 5 AM IST sleep window)
+    # 02:00 AM IST on Wednesday (within 12 AM - 8 AM IST sleep window)
     IST = timezone(timedelta(hours=5, minutes=30))
     night_dt = datetime(2026, 9, 9, 2, 0, tzinfo=IST).astimezone(timezone.utc)
 
-    # Crypto (BTC, ETH, SOL, ZEC) runs 24/7
-    assert _is_session_active("always", night_dt, cfg) is True
+    # New default: crypto_24_7=False -> crypto sleeps at night
+    cfg_sleep = copy.deepcopy(cfg)
+    cfg_sleep.raw["sleep_window"] = {
+        "enabled": True, "start_hour_ist": 0, "end_hour_ist": 8, "crypto_24_7": False
+    }
+    assert _is_session_active("always",   night_dt, cfg_sleep) is False
+    assert _is_session_active("us_cash",  night_dt, cfg_sleep) is False
+    assert _is_session_active("fx_week",  night_dt, cfg_sleep) is False
 
-    # Non-crypto rests during night mode
-    assert _is_session_active("us_cash", night_dt, cfg) is False
-    assert _is_session_active("fx_week", night_dt, cfg) is False
+    # Legacy mode: crypto_24_7=True -> crypto bypasses sleep window
+    cfg_always = copy.deepcopy(cfg)
+    cfg_always.raw["sleep_window"] = {
+        "enabled": True, "start_hour_ist": 0, "end_hour_ist": 8, "crypto_24_7": True
+    }
+    assert _is_session_active("always",   night_dt, cfg_always) is True
+    assert _is_session_active("fx_week",  night_dt, cfg_always) is False
 
 
 def test_non_crypto_active_outside_night_mode(cfg):

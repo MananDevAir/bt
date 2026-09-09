@@ -43,13 +43,10 @@ SESSION_WINDOWS: dict[str, tuple[int, int] | None] = {
 def _is_session_active(session: str, now: datetime, cfg: Config | None = None) -> bool:
     """Check if a symbol's market session is currently active.
 
-    Crypto assets (session == 'always') run 24/7/365 without sleep window interruption.
-    Non-crypto assets observe both their market session and the 12 AM - 5 AM IST sleep window.
+    All assets observe the sleep window. Crypto (session == 'always') additionally
+    bypasses the sleep window only when crypto_24_7 is explicitly True in config.
     """
-    if session == "always":
-        return True
-
-    # Non-crypto assets: check sleep window (12:00 AM - 5:00 AM IST)
+    # Check sleep window first for all assets
     if cfg is not None:
         sleep_cfg = cfg.get("sleep_window", default={}) or {}
         if sleep_cfg.get("enabled", False):
@@ -57,8 +54,16 @@ def _is_session_active(session: str, now: datetime, cfg: Config | None = None) -
             ist_now = now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=timezone.utc).astimezone(IST)
             start_h = int(sleep_cfg.get("start_hour_ist", 0))
             end_h = int(sleep_cfg.get("end_hour_ist", 5))
-            if start_h <= ist_now.hour < end_h:
-                return False
+            in_sleep = start_h <= ist_now.hour < end_h
+            if in_sleep:
+                # Crypto bypasses sleep only if crypto_24_7 is explicitly True
+                if session == "always" and sleep_cfg.get("crypto_24_7", False):
+                    pass  # crypto 24/7 mode — skip sleep window
+                else:
+                    return False
+
+    if session == "always":
+        return True
 
     if session == "fx_week":
         # Active Sun 21:00 UTC through Fri 21:00 UTC

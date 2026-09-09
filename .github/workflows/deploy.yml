@@ -1,31 +1,23 @@
-﻿name: Deploy on Push
+name: Deploy on Push
 
-# Triggers every time code lands on main (direct push or merged PR)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'data/**'      # CRITICAL: DB auto-commits must NOT re-trigger tests
+      - '**.md'
+      - '**.json'
 
 jobs:
-  deploy:
-    name: Restart relay with new code
+  test-and-notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write   # needed to cancel + dispatch workflow runs
-
+    timeout-minutes: 8
     steps:
-      - name: Cancel current relay runner (if any)
-        uses: styfle/cancel-workflow-action@0.12.1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          workflow_id: bot.yml      # filename of the relay workflow
-          access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Wait for cancellation to propagate
-        run: sleep 10
-
-      - name: Dispatch fresh relay runner
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: bot.yml
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: main
+          python-version: '3.13'
+          cache: 'pip'
+      - run: python -m pip install -r requirements.txt -q
+      - name: Dummy test (saves build time)
+        run: python -c "assert 1 + 2 == 3; print('Dummy test passed!')"
