@@ -5,14 +5,16 @@ Features:
   - Outcome checks on a separate slower interval (default: 1h)
   - Daily report at configured hour (default: 00:00 UTC)
   - Weekly report on configured day (default: Sunday)
-  - Telegram bot command polling between scans
+  - Command polling no-op for Discord (graceful for Telegram)
   - Graceful shutdown on Ctrl+C
 """
 from __future__ import annotations
 
 import logging
+import os
 import signal as os_signal
 import sqlite3
+import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -22,10 +24,11 @@ from .config import Config
 from .data.budget import Budget
 from .data.router import Router
 from .scanner import run_scan
-from .tracking.outcome_checker import check_outcomes
+from .tracking.outcome_checker import check_outcomes, replay_missed_notifications
 from .tracking.report import daily_report, weekly_report
+from .tracking.streaks import get_threshold_adjustment
 from .maintenance import cleanup
-from .alerts.telegram import send_text, poll_commands
+from .alerts.dispatcher import send_text, poll_commands
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +66,25 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
     stopper = _GracefulExit()
 
     # Setup
+    data_dir = cfg.db_path.parent
+    lock_file = data_dir / "bot.lock"
+
+    # Fix: Prevent multi-instance race conditions
+    if lock_file.exists():
+        try:
+            pid = int(lock_file.read_text().strip())
+            os.kill(pid, 0)
+            log.error("Another bot instance is running (PID %d). Aborting startup to prevent duplicate trades.", pid)
+            sys.exit(1)
+        except (ValueError, ProcessLookupError, OSError):
+            pass  # Not running or invalid lock
+
+    try:
+        lock_file.write_text(str(os.getpid()))
+    except Exception as exc:
+        log.error("Failed to write lock file: %s", exc)
+        sys.exit(1)
+
     budget = Budget(conn, 750, 7)
     router = Router(cfg, conn, budget)
     data_dir = cfg.db_path.parent
@@ -82,6 +104,7 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
     last_weekly_report = ""
     last_maintenance = ""
     cycle = 0
+    _was_sleeping = False  # Fix 2: detect wakeup from night mode
 
     # Startup message
     ist_now = datetime.now(IST).strftime("%d %b %Y, %I:%M %p IST")
@@ -93,9 +116,15 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
         f"\U0001f4ca Mode: {'DRY RUN' if dry_run else 'LIVE'}"
     )
     if not dry_run:
-        send_text(startup_msg)
+        send_text(startup_msg, cfg)
     log.info("Bot started: %d symbols, %d min interval, dry_run=%s",
              len(cfg.symbols), scan_interval // 60, dry_run)
+
+    # Fix 4: Resend any TP/SL alerts that were recorded before a crash but never delivered
+    try:
+        replay_missed_notifications(conn, cfg)
+    except Exception as exc:
+        log.warning("replay_missed_notifications failed: %s", exc)
 
     try:
         while not stopper.should_stop:
@@ -112,21 +141,29 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
                 ist_now = datetime.now(IST)
                 start_h = int(sleep_cfg.get("start_hour_ist", 0))
                 end_h = int(sleep_cfg.get("end_hour_ist", 5))
-                if start_h <= ist_now.hour < end_h:
-                    is_sleeping = True
-
-            # ── 1. Scan ─────────────────────────────────────
+                h = ist_now.hour
+                if start_h <= end_h:
+                    is_sleeping = start_h <= h < end_h
+                else:
+                    is_sleeping = h >= start_h or h < end_h
+            # ── 1. Scan ────────────────────────────────────────
             if is_sleeping:
                 log.info("Night mode active (%02d:00-%02d:00 IST) - skipping scan", start_h, end_h)
                 summary = {"symbols_scanned": 0, "signals_emitted": 0}
                 summary["scores"] = {}
             else:
+                # Fix 2: Force-refresh all data on first scan after wakeup
+                just_woke_up = _was_sleeping and not is_sleeping
+                if just_woke_up:
+                    log.info("Wakeup from night mode — forcing full data re-fetch for all symbols")
                 try:
-                    summary = run_scan(cfg, conn, budget, router, data_dir)
+                    summary = run_scan(cfg, conn, budget, router, data_dir,
+                                      force_refresh=just_woke_up)
                 except Exception as exc:
                     log.error("Scan failed: %s", exc, exc_info=True)
                     summary = {"symbols_scanned": 0, "signals_emitted": 0}
                     summary["scores"] = {}
+            _was_sleeping = is_sleeping  # Fix 2: update for next cycle
 
             # ── 2. Outcome check ─────────────────────────────
             if time.time() - last_outcome_check >= outcome_interval:
@@ -178,18 +215,21 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
             elapsed = time.time() - cycle_start
             sleep_time = max(10, scan_interval - elapsed)
 
-            # Build status for /status command
+            # Build status for /status command using the SAME effective threshold the scanner uses
             scores = summary.get("scores", {})
+            _base_watch = int(cfg.get("thresholds", "watch", default=18) or 18)
+            _streak_bump = get_threshold_adjustment(conn)
+            _eff_watch = _base_watch + _streak_bump
             status_list = [
                 {"symbol": sym, "score": sc,
-                 "label": "LONG" if sc > 18 else "SHORT" if sc < -18 else "NEUTRAL"}
+                 "label": "LONG" if sc >= _eff_watch else "SHORT" if sc <= -_eff_watch else "NEUTRAL"}
                 for sym, sc in scores.items()
             ]
 
             log.info("Cycle %d done in %.1fs. Next scan in %.0fs",
                      cycle, elapsed, sleep_time)
 
-            # Sleep in small chunks, polling Telegram between naps
+            # Sleep in small chunks; poll_commands is a no-op for Discord
             sleep_end = time.time() + sleep_time
             while time.time() < sleep_end and not stopper.should_stop:
                 # Poll for commands every 5 seconds
@@ -212,5 +252,13 @@ def run_loop(cfg: Config, conn: sqlite3.Connection) -> None:
         f"Cycles completed: {cycle}"
     )
     if not dry_run:
-        send_text(shutdown_msg)
+        send_text(shutdown_msg, cfg)
     log.info("Bot stopped after %d cycles", cycle)
+    
+    # Cleanup lock file on exit
+    if lock_file.exists():
+        try:
+            lock_file.unlink()
+        except OSError:
+            pass
+

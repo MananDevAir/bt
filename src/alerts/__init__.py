@@ -1,1 +1,1 @@
-"""Telegram alerts — signal sender, formatter, bot commands."""
+"""Alert providers — Discord Webhook, Telegram Bot API, formatter, and dispatcher."""

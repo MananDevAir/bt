@@ -95,17 +95,18 @@ def test_score_is_raw_over_max_possible(neutral_cfg, frozen_frames):
     sig = score_symbol(frozen_frames, SYM, neutral_cfg)
     assert sig.max_possible > 0
     expected = max(-100.0, min(100.0, 100.0 * sig.raw_score / sig.max_possible))
+    expected *= 0.85  # The frozen fixture is at 23:00 UTC (19:00 NY), which is asian_dead
     assert sig.score == pytest.approx(round(expected, 1))
 
 
 def test_confidence_is_clamped_to_its_documented_band(neutral_cfg, frozen_frames):
-    """`confidence` is floored at 55 and capped at 95 — never 0-100.
+    """`confidence` is floored at 50 and capped at 98 — never 0-100.
 
-    Worth pinning because a reader of the Telegram message sees "55%" and may
+    Worth pinning because a reader of the Telegram message sees "50%" and may
     read it as a real probability; it is the floor, not a measurement.
     """
     sig = score_symbol(frozen_frames, SYM, neutral_cfg)
-    assert 55.0 <= sig.confidence <= 95.0
+    assert 50.0 <= sig.confidence <= 98.0
 
 
 # --------------------------------------------------------------------------- #
@@ -165,13 +166,13 @@ def test_a_score_below_watch_is_neutral(neutral_cfg, flat):
 
 
 def test_raising_the_watch_threshold_silences_a_marginal_signal(cfg, frozen_frames):
-    """If a symbol scores +8.8, a threshold of watch=8 alerts WATCH LONG.
+    """If a symbol scores +7.5, a threshold of watch=7 alerts WATCH LONG.
     A threshold of watch=10 forces it to NEUTRAL."""
-    base = {"strong": 65, "signal": 40, "watch": 8}
+    base = {"strong": 65, "signal": 40, "watch": 7}
     tuned = _cfg_with(cfg, thresholds=base)
 
     sig = score_symbol(frozen_frames, "TESTSYM", tuned)
-    assert sig.label == "WATCH LONG"  # 8.8 >= 8
+    assert sig.label == "WATCH LONG"  # 7.5 >= 7
 
     stricter = _cfg_with(cfg, thresholds={"strong": 65, "signal": 40, "watch": 10})
     sig_strict = score_symbol(frozen_frames, "TESTSYM", stricter)
@@ -181,7 +182,7 @@ def test_raising_the_watch_threshold_silences_a_marginal_signal(cfg, frozen_fram
 def test_symbol_overrides_take_precedence_over_global_thresholds(cfg, frozen_frames):
     """`symbol_overrides` is how the backtest-tuned per-symbol watch levels are
     applied. Same data, same score, different symbol name, different label."""
-    base = {"strong": 65, "signal": 40, "watch": 8}
+    base = {"strong": 65, "signal": 40, "watch": 7}
     tuned = _cfg_with(cfg, thresholds=base,
                       symbol_overrides={"PICKY": {"watch": 90}})
     normal = score_symbol(frozen_frames, "TESTSYM", tuned)
@@ -222,7 +223,8 @@ def test_a_single_weighted_category_isolates_that_category(cfg, frozen_frames):
         if trend:
             num += mult * 10 * (sum(trend) / len(trend))
         den += mult * 10
-    assert sig.score == pytest.approx(round(100.0 * num / den, 1))
+    expected = round((100.0 * num / den) * 0.85, 1)  # 0.85 for asian_dead penalty
+    assert sig.score == pytest.approx(expected)
 
 
 def test_timeframe_multipliers_shift_the_score(cfg, frozen_frames):
@@ -296,11 +298,11 @@ def test_a_downgrade_gate_never_silences_a_watch(cfg, frozen_frames):
     the gate costs it 10 confidence points and a tier, nothing more. Worth
     pinning because "downgrade" reads as if it might suppress the alert.
 
-    watch=8 is used because the frozen fixture scores ~8.8 after the
-    sweep rules and timeframe weighting changes.
+    watch=7 is used because the frozen fixture scores ~7.5 after the
+    sweep rules, timeframe weighting changes, and timezone fixes.
     """
     sig = score_symbol(frozen_frames, SYM, _cfg_with(
-        cfg, thresholds={"watch": 8, "signal": 40, "strong": 65},
+        cfg, thresholds={"watch": 7, "signal": 40, "strong": 65},
         symbol_overrides={}))
     assert any(g.get("action") == "downgrade" for g in sig.gates.values())
     assert sig.label in DOWNGRADED

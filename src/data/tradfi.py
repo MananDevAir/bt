@@ -75,7 +75,12 @@ def fetch(
                 # a rejected call still counts against nothing - do not spend
                 raise FetchError(f"twelvedata: {message}")
             budget.spend(1)
-            return _to_frame(payload.get("values") or [])
+            df = _to_frame(payload.get("values") or [])
+            # Drop live, currently forming candle to prevent repainting
+            bar_dur = {"15m": 900_000, "30m": 1_800_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}.get(timeframe, 900_000)
+            now_ms = int(time.time() * 1000)
+            idx_ms = df.index.astype("int64") // 1_000_000
+            return df[idx_ms + bar_dur <= now_ms]
         except FetchError:
             raise
         except Exception as exc:

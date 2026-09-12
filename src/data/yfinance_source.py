@@ -31,6 +31,14 @@ TF_MAP = {
     "1w":  ("10y", "1wk"),     # ~520 bars, yfinance uses "1wk" not "1w"
 }
 
+BAR_MS = {
+    "15m": 900_000,
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+    "1d": 86_400_000,
+    "1w": 604_800_000,
+}
+
 
 class FetchError(RuntimeError):
     pass
@@ -73,6 +81,12 @@ def fetch(ticker: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
 
             if needs_resample:
                 df = _resample_4h(df)
+
+            # Drop live, currently forming candle to prevent repainting
+            bar_dur = BAR_MS.get(timeframe, 3_600_000)
+            now_ms = int(time.time() * 1000)
+            idx_ms = df.index.astype("int64") // 1_000_000
+            df = df[idx_ms + bar_dur <= now_ms]
 
             # Trim to requested limit
             return df.tail(limit)

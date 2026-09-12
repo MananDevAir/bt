@@ -22,27 +22,27 @@ symbols:
   - name: BTC
     primary:  {source: binance,     ticker: "BTC/USDT"}
     fallback: {source: hyperliquid, ticker: "BTC"}
-    session: fx_week
+    session: always
 
   - name: ETH
     primary:  {source: binance,     ticker: "ETH/USDT"}
     fallback: {source: hyperliquid, ticker: "ETH"}
-    session: fx_week
+    session: always
 
   - name: SOL
     primary:  {source: binance,     ticker: "SOL/USDT"}
     fallback: {source: hyperliquid, ticker: "SOL"}
-    session: fx_week
+    session: always
 
   - name: ZEC
     primary:  {source: binance,     ticker: "ZEC/USDT"}
     fallback: {source: hyperliquid, ticker: "ZEC"}
-    session: fx_week
+    session: always
 
   - name: XAUUSDT
     primary:  {source: binance,     ticker: "XAUT/USDT"}
     fallback: {source: hyperliquid, ticker: "PAXG"}
-    session: fx_week
+    session: always
 
   - name: US100
     primary:  {source: hyperliquid, ticker: "xyz:XYZ100"}
@@ -57,22 +57,22 @@ symbols:
   - name: US30
     primary:  {source: yfinance,    ticker: "YM=F"}
     fallback: {source: twelvedata,  ticker: "DJI"}
-    session: us_cash
+    session: fx_week
 
 
   - name: EURUSD
     primary:  {source: yfinance,    ticker: "EURUSD=X"}
-    fallback: {source: twelvedata,  ticker: "EUR/USD"}
+    fallback: {source: hyperliquid, ticker: "xyz:EUR"}
     session: fx_week
 
   - name: GBPUSD
     primary:  {source: yfinance,    ticker: "GBPUSD=X"}
-    fallback: {source: twelvedata,  ticker: "GBP/USD"}
+    fallback: {source: hyperliquid, ticker: "xyz:GBP"}
     session: fx_week
 
   - name: USDJPY
     primary:  {source: yfinance,    ticker: "USDJPY=X"}
-    fallback: {source: twelvedata,  ticker: "USD/JPY"}
+    fallback: {source: hyperliquid, ticker: "xyz:JPY"}
     session: fx_week
 
 # how many closed candles we want per timeframe for analysis
@@ -125,9 +125,14 @@ llm:
   provider: huggingface
   model: "meta-llama/Llama-3.1-8B-Instruct"
   fallback_model: "Qwen/Qwen2.5-7B-Instruct"
-  enabled: true
+  enabled: false  # Disabled to run without Groq/HF keys
   daily_cap: 100
   timeout_s: 12
+
+alerts:
+  provider: discord  # Can be 'telegram' or 'discord'
+  discord_webhook_url: ""  # Put your Discord Webhook URL here
+
 
 budget:
   twelvedata_daily_cap: 750
@@ -150,14 +155,14 @@ logging:
 # crypto source fallbacks if binance is unreachable from this host
 exchange_fallbacks: [bybit, okx, kraken]
 
-scan_interval_minutes: 30
+scan_interval_minutes: 15
 db_path: "data/bot.db"
 
-# Sleep window (Timezone: IST) - applied to ALL assets (crypto + forex + indices)
-# crypto_24_7: false = crypto also rests at night, saving GitHub Actions minutes
+# Sleep window - DISABLED for 24/7 free hosts (Kerit Cloud, Wispbyte)
+# Re-enable only if running on GitHub Actions cron to save free-tier minutes
 sleep_window:
   enabled: true
   start_hour_ist: 0   # 12:00 AM IST
-  end_hour_ist: 8     # 08:00 AM IST
-  crypto_24_7: false  # Crypto rests at night — set true to re-enable 24/7 crypto
+  end_hour_ist: 4     # 04:00 AM IST
+  crypto_24_7: true   # set true to scan crypto even during sleep window
 

@@ -67,16 +67,36 @@ class Router:
         self.budget = budget
         self.td_key = Config.secret("TWELVEDATA_KEY")
         self.fallbacks = list(cfg.get("exchange_fallbacks", default=[]) or [])
-        self._daily_pulled: set[str] = set()
+        # Fix 4: Convert memory leak set to a dict bounded by symbol count
+        self._daily_pulled: dict[str, str] = {}
+        # Fix 2: Persistent thread pool instead of churning one per symbol
+        self._pool = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
-    def fetch_symbol(self, sym: Symbol, now: datetime | None = None) -> FetchResult:
+    def __del__(self):
+        try:
+            self._pool.shutdown(wait=False)
+        except Exception:
+            pass
+
+    def fetch_symbol(self, sym: Symbol, now: datetime | None = None,
+                     force_refresh: bool = False) -> FetchResult:
+        """Fetch all timeframes for a symbol.
+
+        Args:
+            force_refresh: When True, bypass the freshness cache entirely.
+                           Used on wakeup from night mode to flush stale data.
+        """
         res = FetchResult(symbol=sym)
         open_now = sessions.is_open(sym.session, now)
         if not open_now:
             res.note(f"{sym.session} closed - serving cache")
 
+        if force_refresh:
+            log.info("%s: force_refresh — bypassing freshness cache", sym.name)
+
         # Try primary source
-        success = self._try_source(sym.primary, sym, res, open_now, now)
+        success = self._try_source(sym.primary, sym, res, open_now, now,
+                                   force_refresh=force_refresh)
 
         # Check if any timeframe is missing or has shallow history (< 12 bars on 1w, < 50 on others)
         min_bars_needed = {"1w": 12, "1d": 50, "4h": 50, "1h": 50, "15m": 50}
@@ -91,7 +111,8 @@ class Router:
                 res.note(f"primary {sym.primary.source} failed, trying fallback {sym.fallback.source}")
             else:
                 res.note(f"filling shallow/missing timeframes from fallback {sym.fallback.source}")
-            self._try_source(sym.fallback, sym, res, open_now, now)
+            self._try_source(sym.fallback, sym, res, open_now, now,
+                             force_refresh=force_refresh)
 
         # Fill any gaps from cache
         self._fill_from_cache(sym, res)
@@ -99,17 +120,18 @@ class Router:
         return res
 
     def _try_source(self, spec: SourceSpec, sym: Symbol, res: FetchResult,
-                    open_now: bool, now: datetime | None = None) -> bool:
+                    open_now: bool, now: datetime | None = None,
+                    force_refresh: bool = False) -> bool:
         """Attempt to fetch all timeframes from a source. Returns True if it got data."""
         try:
             if spec.source == "binance":
-                self._fetch_binance(spec.ticker, sym, res, now)
+                self._fetch_binance(spec.ticker, sym, res, now, force_refresh=force_refresh)
             elif spec.source == "hyperliquid":
-                self._fetch_hyperliquid(spec.ticker, sym, res, now)
+                self._fetch_hyperliquid(spec.ticker, sym, res, now, force_refresh=force_refresh)
             elif spec.source == "yfinance":
-                self._fetch_yfinance(spec.ticker, sym, res, open_now, now)
+                self._fetch_yfinance(spec.ticker, sym, res, open_now, now, force_refresh=force_refresh)
             elif spec.source == "twelvedata":
-                self._fetch_tradfi(spec.ticker, sym, res, open_now)
+                self._fetch_tradfi(spec.ticker, sym, res, open_now, force_refresh=force_refresh)
             else:
                 res.note(f"unknown source: {spec.source}")
                 return False
@@ -149,15 +171,20 @@ class Router:
         return False
 
     def _tfs_needing_fetch(self, sym: Symbol, res: FetchResult,
-                           now: datetime | None = None) -> list[str]:
-        """Return only timeframes that actually need a fresh HTTP fetch."""
+                           now: datetime | None = None,
+                           force_refresh: bool = False) -> list[str]:
+        """Return only timeframes that actually need a fresh HTTP fetch.
+
+        When force_refresh is True, all timeframes are returned regardless
+        of cache freshness — used on wakeup from night mode.
+        """
         min_bars_needed = {"1w": 20, "1d": 50, "4h": 50, "1h": 50, "15m": 50}
         need: list[str] = []
         for tf in self.cfg.timeframes:
             min_wanted = min_bars_needed.get(tf, 20)
             if tf in res.frames and len(res.frames[tf]) >= min_wanted:
                 continue
-            if self._is_cache_fresh(sym.name, tf, now):
+            if not force_refresh and self._is_cache_fresh(sym.name, tf, now):
                 # Serve from cache instead of fetching
                 cached = cache.load(self.conn, sym.name, tf,
                                     self.cfg.history.get(tf, 300))
@@ -186,14 +213,35 @@ class Router:
         if not tfs:
             return
         futures = {}
-        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(tfs))) as pool:
-            for tf in tfs:
-                limit = self.cfg.history.get(tf, 300)
-                fut = pool.submit(self._fetch_tf, fetch_fn, ticker, tf, limit)
-                futures[fut] = tf
+        # Fix 2: Use persistent pool
+        for tf in tfs:
+            limit = self.cfg.history.get(tf, 300)
+            fut = self._pool.submit(self._fetch_tf, fetch_fn, ticker, tf, limit)
+            futures[fut] = tf
 
-            for fut in as_completed(futures):
+        for fut in as_completed(futures):
                 tf, df = fut.result()
+                if not df.empty:
+                    # Fix 1: Trim incomplete forming candle to prevent repainting
+                    last_ts = df.index[-1]
+                    if hasattr(last_ts, "to_pydatetime"):
+                        open_ts = last_ts.to_pydatetime()
+                        if open_ts.tzinfo is None:
+                            open_ts = open_ts.replace(tzinfo=timezone.utc)
+                        else:
+                            open_ts = open_ts.astimezone(timezone.utc)
+                            
+                        minutes = 0
+                        if tf.endswith("m"): minutes = int(tf[:-1])
+                        elif tf.endswith("h"): minutes = int(tf[:-1]) * 60
+                        elif tf.endswith("d"): minutes = int(tf[:-1]) * 1440
+                        elif tf.endswith("w"): minutes = int(tf[:-1]) * 10080
+                        
+                        close_ts = open_ts + timedelta(minutes=minutes)
+                        utc_now = datetime.now(timezone.utc)
+                        if utc_now < close_ts:
+                            df = df.iloc[:-1]
+                
                 if not df.empty:
                     existing_len = len(res.frames[tf]) if tf in res.frames else 0
                     if len(df) >= existing_len:
@@ -205,8 +253,9 @@ class Router:
     # ------------------------------------------------------------------ #
 
     def _fetch_binance(self, ticker: str, sym: Symbol, res: FetchResult,
-                       now: datetime | None = None) -> None:
-        tfs = self._tfs_needing_fetch(sym, res, now)
+                       now: datetime | None = None,
+                       force_refresh: bool = False) -> None:
+        tfs = self._tfs_needing_fetch(sym, res, now, force_refresh=force_refresh)
         if not tfs:
             return
 
@@ -220,13 +269,12 @@ class Router:
 
         # Parallel fetch all needed timeframes
         futures = {}
-        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(tfs))) as pool:
-            for tf in tfs:
-                limit = self.cfg.history.get(tf, 300)
-                fut = pool.submit(_binance_one, ticker, tf, limit)
-                futures[fut] = tf
+        for tf in tfs:
+            limit = self.cfg.history.get(tf, 300)
+            fut = self._pool.submit(_binance_one, ticker, tf, limit)
+            futures[fut] = tf
 
-            for fut in as_completed(futures):
+        for fut in as_completed(futures):
                 tf = futures[fut]
                 try:
                     df = fut.result()
@@ -237,24 +285,27 @@ class Router:
                     res.note(f"binance {tf}: {exc}")
 
     def _fetch_hyperliquid(self, ticker: str, sym: Symbol, res: FetchResult,
-                           now: datetime | None = None) -> None:
+                           now: datetime | None = None,
+                           force_refresh: bool = False) -> None:
         from . import hyperliquid
-        tfs = self._tfs_needing_fetch(sym, res, now)
+        tfs = self._tfs_needing_fetch(sym, res, now, force_refresh=force_refresh)
         if not tfs:
             return
         self._parallel_fetch(hyperliquid.fetch, ticker, sym, res, tfs)
 
     def _fetch_yfinance(self, ticker: str, sym: Symbol, res: FetchResult,
-                        open_now: bool, now: datetime | None = None) -> None:
+                        open_now: bool, now: datetime | None = None,
+                        force_refresh: bool = False) -> None:
         from . import yfinance_source
-        tfs = self._tfs_needing_fetch(sym, res, now)
+        tfs = self._tfs_needing_fetch(sym, res, now, force_refresh=force_refresh)
         if not tfs:
             return
         self._parallel_fetch(yfinance_source.fetch, ticker, sym, res, tfs)
 
     # ---- Twelve Data: one deep 15m pull + resample (credit-budgeted) ---------
     def _fetch_tradfi(self, ticker: str, sym: Symbol, res: FetchResult,
-                      open_now: bool) -> None:
+                      open_now: bool,
+                      force_refresh: bool = False) -> None:
         from . import tradfi
         if not self.td_key:
             res.note("skipped: no TWELVEDATA_KEY")
@@ -278,19 +329,27 @@ class Router:
             cache.save(self.conn, sym.name, tf, trimmed)
         res.note(f"TD 1 credit: {base_tf} x{len(base)} -> {', '.join(intraday)}")
 
-        self._fetch_daily_td(ticker, sym, res)
+        self._fetch_daily_td(ticker, sym, res, force_refresh=force_refresh)
 
-    def _fetch_daily_td(self, ticker: str, sym: Symbol, res: FetchResult) -> None:
+    def _fetch_daily_td(self, ticker: str, sym: Symbol, res: FetchResult,
+                        force_refresh: bool = False) -> None:
         """Daily bars via Twelve Data — only once per UTC day."""
         from . import tradfi
         htf = self.cfg.htf
         if htf in res.frames and not res.frames[htf].empty:
             return
-        stamp = f"{sym.name}:{datetime.now(timezone.utc):%Y-%m-%d}"
-        if stamp in self._daily_pulled:
+            
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        
+        # Fix 5: Clear cache on force_refresh
+        if force_refresh and sym.name in self._daily_pulled:
+            del self._daily_pulled[sym.name]
+            
+        if self._daily_pulled.get(sym.name) == today:
             return
+            
         cached = cache.load(self.conn, sym.name, htf, self.cfg.history.get(htf, 300))
-        if not cached.empty:
+        if not cached.empty and not force_refresh:
             fresh_enough = cached.index[-1].date() >= (
                 datetime.now(timezone.utc).date() - timedelta(days=1)
             )
@@ -306,7 +365,7 @@ class Router:
         if not df.empty:
             res.frames[htf] = df
             cache.save(self.conn, sym.name, htf, df)
-            self._daily_pulled.add(stamp)
+            self._daily_pulled[sym.name] = today
             res.note("TD 1 credit: daily refresh")
 
     # ---- Cache backfill -----------------------------------------------------

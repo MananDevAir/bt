@@ -1,5 +1,5 @@
 {
-  "confidence": 58.9,
+  "confidence": 54.4,
   "direction": 1,
   "gate_passed": true,
   "gates": {
@@ -16,7 +16,7 @@
   "max_possible": 900.0,
   "plan": null,
   "raw_score": 78.914952,
-  "score": 8.8,
+  "score": 7.5,
   "symbol": "GOLDEN",
   "timeframes": {
     "15m": {

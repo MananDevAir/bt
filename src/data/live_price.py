@@ -149,8 +149,9 @@ def _fetch_binance(ticker: str) -> dict[str, float] | None:
             data = resp.json()
             if not data:
                 continue
-            # Use the currently developing candle to capture live wicks
-            candle = data[-1]
+            # Use the last COMPLETED candle — consistent with close-based SL check in outcome_checker.
+            # Using data[-1] (the live bar) could trigger TP on an intra-bar wick that fully reverses.
+            candle = data[-2] if len(data) >= 2 else data[0]
             return {
                 "high": float(candle[2]),
                 "low": float(candle[3]),

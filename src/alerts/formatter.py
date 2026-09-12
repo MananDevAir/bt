@@ -1,4 +1,4 @@
-"""Telegram message formatter — clean, scannable signal alerts.
+"""Alert message formatter — Discord and Telegram compatible.
 
 Design goals:
   - Glanceable: know the direction + symbol in 1 second
@@ -91,7 +91,6 @@ def format_signal(signal: Any, plan: Any | None,
         "Intraday": "\u23f1",       # ⏱
         "Swing": "\U0001f504",      # 🔄
         "Positional": "\U0001f4c8", # 📈
-        "Short-term": "\U0001f4c5", # 📅
     }
 
     # Grade badge

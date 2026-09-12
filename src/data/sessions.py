@@ -68,19 +68,28 @@ def describe(session: str, now: datetime | None = None) -> str:
 
 
 def get_active_killzone(now: datetime | None = None) -> str | None:
-    """Check if current time is within high-probability ICT/liquidity killzones."""
-    dt = _now_utc(now)
-    if dt.weekday() > 4:  # Weekend
+    """Check if current time is within high-probability ICT/liquidity killzones.
+    
+    Anchored to America/New_York to correctly observe DST shifts.
+    """
+    ny = _now_utc(now).astimezone(NY)
+    if ny.weekday() > 4:  # Weekend
         return None
-    t = dt.time()
-    if time(2, 0) <= t < time(4, 0):
+    t = ny.time()
+    
+    # Asian Killzone: 20:00 - 00:00 NY
+    if time(20, 0) <= t or t < time(0, 0):
         return "Asian Open"
-    if time(7, 0) <= t < time(10, 30):
+    # London Killzone: 02:00 - 05:00 NY
+    if time(2, 0) <= t < time(5, 0):
         return "London Open"
-    if time(12, 30) <= t < time(17, 0):
+    # New York Killzone: 07:00 - 10:00 NY
+    if time(7, 0) <= t < time(10, 0):
         return "New York Open"
-    if time(19, 0) <= t < time(21, 0):
+    # London Close: 10:00 - 12:00 NY
+    if time(10, 0) <= t < time(12, 0):
         return "London Close"
+    
     return None
 
 
@@ -89,19 +98,28 @@ def get_market_session(now: datetime | None = None) -> str:
 
     Returns one of: 'asian_dead', 'asian', 'london', 'overlap', 'new_york',
     'new_york_close', 'weekend'.
+    
+    Anchored to America/New_York to correctly observe DST shifts.
     """
-    dt = _now_utc(now)
-    if dt.weekday() > 4:          # Saturday or Sunday
+    ny = _now_utc(now).astimezone(NY)
+    if ny.weekday() > 4:          # Saturday or Sunday
         return "weekend"
-    t = dt.time()
-    if time(0, 0) <= t < time(5, 0):
+    
+    t = ny.time()
+    # Asian Dead Zone: 19:00 - 00:00 NY
+    if time(19, 0) <= t or t < time(0, 0):
         return "asian_dead"       # pre-London dead zone — high fakeout risk
-    if time(5, 0) <= t < time(7, 0):
+    # Asian / Pre-London: 00:00 - 02:00 NY
+    if time(0, 0) <= t < time(2, 0):
         return "asian"            # late Asian / early Europe pre-open
-    if time(7, 0) <= t < time(12, 30):
-        return "london"           # London cash session
-    if time(12, 30) <= t < time(17, 0):
-        return "overlap"          # London / New York overlap — highest volume
-    if time(17, 0) <= t < time(21, 0):
-        return "new_york"         # New York afternoon
-    return "new_york_close"       # NY close / early Asian build-up
+    # London cash session: 02:00 - 07:30 NY
+    if time(2, 0) <= t < time(7, 30):
+        return "london"           
+    # London / New York overlap: 07:30 - 12:00 NY
+    if time(7, 30) <= t < time(12, 0):
+        return "overlap"          # highest volume
+    # New York afternoon: 12:00 - 16:00 NY
+    if time(12, 0) <= t < time(16, 0):
+        return "new_york"         
+    # NY Close / early Asian build-up: 16:00 - 19:00 NY
+    return "new_york_close"

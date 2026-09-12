@@ -20,25 +20,19 @@ from typing import Any
 from .config import Config
 from .data.budget import Budget
 from .data.router import Router
+from .data.sessions import is_open
 from .store import db, signals as sig_store
 from .analysis.confluence import score_symbol
 from .analysis.levels import generate_plan
 from .llm.explain import explain
 from .llm.template import build_fact_sheet, narrate as template_narrate
-from .alerts.telegram import send_signal
+from .alerts.dispatcher import send_signal
 from .logging_util import log_signal, log_scan
+from .tracking.streaks import get_threshold_adjustment
 
 log = logging.getLogger(__name__)
 
 __all__ = ["run_scan"]
-
-# Session windows (UTC hours). None = always active.
-SESSION_WINDOWS: dict[str, tuple[int, int] | None] = {
-    "always": None,
-    "us_cash": (13, 21),     # NYSE: 9:30-16:00 ET = 13:30-20:00 UTC (approx 13-21)
-    "fx_week": (21, 21),     # Sun 21:00 - Fri 21:00 UTC (handled separately)
-}
-
 
 def _is_session_active(session: str, now: datetime, cfg: Config | None = None) -> bool:
     """Check if a symbol's market session is currently active.
@@ -54,7 +48,14 @@ def _is_session_active(session: str, now: datetime, cfg: Config | None = None) -
             ist_now = now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=timezone.utc).astimezone(IST)
             start_h = int(sleep_cfg.get("start_hour_ist", 0))
             end_h = int(sleep_cfg.get("end_hour_ist", 5))
-            in_sleep = start_h <= ist_now.hour < end_h
+            
+            # Fix 2: Handle sleep windows that wrap around midnight
+            h = ist_now.hour
+            if start_h <= end_h:
+                in_sleep = start_h <= h < end_h
+            else:
+                in_sleep = h >= start_h or h < end_h
+                
             if in_sleep:
                 # Crypto bypasses sleep only if crypto_24_7 is explicitly True
                 if session == "always" and sleep_cfg.get("crypto_24_7", False):
@@ -62,44 +63,17 @@ def _is_session_active(session: str, now: datetime, cfg: Config | None = None) -
                 else:
                     return False
 
-    if session == "always":
-        return True
-
-    if session == "fx_week":
-        # Active Sun 21:00 UTC through Fri 21:00 UTC
-        wd = now.weekday()  # Mon=0 .. Sun=6
-        hour = now.hour
-        if wd == 6 and hour >= 21:  # Sunday after 21:00
-            return True
-        if wd == 5:  # Saturday
-            return False
-        if wd == 4 and hour >= 21:  # Friday after 21:00
-            return False
-        if 0 <= wd <= 4:  # Mon-Fri
-            return True
-        return False
-
-    if session == "us_cash":
-        # NYSE is closed on weekends
-        if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
-            return False
-        # Weekdays fall through to the hour check below
-
-    window = SESSION_WINDOWS.get(session)
-    if window is None:
-        return True
-
-    start_h, end_h = window
-    hour = now.hour
-    if start_h <= end_h:
-        return start_h <= hour < end_h
-    else:  # wraps midnight
-        return hour >= start_h or hour < end_h
+    return is_open(session, now)
 
 
 def run_scan(cfg: Config, conn: Any, budget: Budget,
-             router: Router, data_dir: Any) -> dict[str, Any]:
+             router: Router, data_dir: Any,
+             force_refresh: bool = False) -> dict[str, Any]:
     """Execute one complete scan cycle.
+
+    Args:
+        force_refresh: When True, bypass data freshness cache for all symbols.
+                       Used on first scan after waking from night mode.
 
     Returns a summary dict:
         symbols_scanned, signals_emitted, duration_s,
@@ -173,7 +147,7 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
             log.debug("Mute check error for %s: %s", sym.name, exc)
 
         try:
-            res = router.fetch_symbol(sym, now)
+            res = router.fetch_symbol(sym, now, force_refresh=force_refresh)
             if not res.ok:
                 log.warning("Data incomplete for %s: %s", sym.name, "; ".join(res.notes))
                 summary["errors"].append(f"{sym.name}: data incomplete")
@@ -213,7 +187,6 @@ def run_scan(cfg: Config, conn: Any, budget: Budget,
             summary["scores"][sym.name] = round(signal.score, 1)
 
             # Apply streak-based threshold adjustment
-            from src.tracking.streaks import get_threshold_adjustment
             streak_bump = get_threshold_adjustment(conn)
             if streak_bump > 0:
                 effective_watch = int(cfg.get("thresholds", "watch", default=18) or 18) + streak_bump

@@ -1,7 +1,7 @@
-"""Daily/weekly performance reports — formatted for Telegram delivery.
+"""Daily/weekly performance reports — formatted for Discord and Telegram delivery.
 
 Generates human-readable summaries with win rate, R stats,
-per-symbol breakdown, and sends them via Telegram.
+per-symbol breakdown, and sends them via the configured alert provider.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from ..config import Config
-from ..alerts.telegram import send_text
+from ..alerts.dispatcher import send_text
 from .performance import compute_stats, save_daily_snapshot
 
 log = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 def format_report(stats: dict[str, Any], title: str = "Daily Report",
                   period: str = "") -> str:
-    """Build a Telegram HTML report from performance stats."""
+    """Build an alert report from performance stats (Discord-and-Telegram compatible)."""
     lines: list[str] = []
 
     ist_now = datetime.now(IST).strftime("%d %b %Y, %I:%M %p IST")

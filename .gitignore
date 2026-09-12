@@ -4,9 +4,9 @@
 # local state
 *.db-journal
 *.db-wal
-data/*
-!data/bot.db
-
+*.db-shm
+*.db
+data/
 # python
 __pycache__/
 *.py[cod]

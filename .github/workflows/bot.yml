@@ -1,53 +1,19 @@
+# DISABLED — Bot is now deployed as a 24/7 process on Kerit Cloud / Pterodactyl.
+# This GitHub Actions cron was the old relay architecture. Keeping file for reference only.
+# Cron triggers have been removed. Only manual dispatch is available for testing.
+
 name: Signal Bot
 
 on:
-  schedule:
-    # Mon-Fri active hours: 8 AM - 11 PM IST (2:30 AM - 5:30 PM UTC), every 30 min
-    - cron: '30 2 * * 1-5'
-    - cron: '0  3 * * 1-5'
-    - cron: '30 3 * * 1-5'
-    - cron: '0  4 * * 1-5'
-    - cron: '30 4 * * 1-5'
-    - cron: '0  5 * * 1-5'
-    - cron: '30 5 * * 1-5'
-    - cron: '0  6 * * 1-5'
-    - cron: '30 6 * * 1-5'
-    - cron: '0  7 * * 1-5'
-    - cron: '30 7 * * 1-5'
-    - cron: '0  8 * * 1-5'
-    - cron: '30 8 * * 1-5'
-    - cron: '0  9 * * 1-5'
-    - cron: '30 9 * * 1-5'
-    - cron: '0  10 * * 1-5'
-    - cron: '30 10 * * 1-5'
-    - cron: '0  11 * * 1-5'
-    - cron: '30 11 * * 1-5'
-    - cron: '0  12 * * 1-5'
-    - cron: '30 12 * * 1-5'
-    - cron: '0  13 * * 1-5'
-    - cron: '30 13 * * 1-5'
-    - cron: '0  14 * * 1-5'
-    - cron: '30 14 * * 1-5'
-    - cron: '0  15 * * 1-5'
-    - cron: '30 15 * * 1-5'
-    - cron: '0  16 * * 1-5'
-    - cron: '30 16 * * 1-5'
-    - cron: '0  17 * * 1-5'
-    - cron: '30 17 * * 1-5'
-    # Sunday evening only: forex market open at 10:30 PM IST = 17:00 UTC
-    - cron: '0 17 * * 0'
-
-  workflow_dispatch:
-
-concurrency:
-  group: signal-bot
-  cancel-in-progress: true    # Kill any running job before starting new one
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   scan:
-    name: Scan markets
+    name: Scan markets (manual only)
     runs-on: ubuntu-latest
-    timeout-minutes: 4        # HARD CAP — never bills more than 4 min per run
+    timeout-minutes: 10
+    # Safety gate — set to true to re-enable automated runs
+    if: false
     permissions:
       contents: write
 
@@ -71,20 +37,5 @@ jobs:
 
       - name: Run scan
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_BACKUP_TOKEN: ${{ secrets.HF_BACKUP_TOKEN }}
-          TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python run_bot.py --github-actions
-
-      - name: Push DB
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/bot.db
-          git diff --staged --quiet || git commit -m "Auto-update database [skip ci]"
-          git pull --rebase origin main
-          git push origin main || true
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python run_bot.py --scan-once --live

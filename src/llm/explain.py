@@ -34,7 +34,7 @@ URL = "https://router.huggingface.co/v1/chat/completions"
 
 SYSTEM_PROMPT = """\
 You are an institutional Price Action (PA) & Smart Money Concepts (SMC) trader.
-Write a crisp, clean 3-bullet technical rationale for a Telegram alert based on the provided facts.
+Write a crisp, clean 3-bullet technical rationale for a trading signal alert based on the provided facts.
 
 STRICT FORMAT (Output ONLY these 3 bullets, nothing else):
 • Entry: <1 sentence on technical reason for entry (e.g. FVG fill, Order Block, S/R retest, CHoCH/BOS)>

@@ -93,12 +93,15 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         if not np.isnan(htf_a) and htf_a > 0:
             htf_atr = htf_a
 
+    # Fix 3: Use the max of LTF and HTF ATR for all structural buffers
+    effective_atr = max(atr_val, htf_atr)
+
     # ----- Entry zone -----
     entry_mid, entry_lo, entry_hi, source = _find_entry(
         signal, direction, current_close, atr_val, cfg=cfg)
 
     # ----- Stop loss -----
-    sl = _find_stop(signal, direction, entry_mid, atr_val,
+    sl = _find_stop(signal, direction, entry_mid, effective_atr,
                     atr_stop_mult, struct_buffer, cfg=cfg)
 
     risk = abs(entry_mid - sl)
@@ -108,8 +111,8 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
         return None
 
     # Stop distance gate
-    risk_atr_units = risk / atr_val if atr_val > 0 else 0
-    if risk > max_stop_atr * atr_val:
+    risk_atr_units = risk / effective_atr if effective_atr > 0 else 0
+    if risk > max_stop_atr * effective_atr:
         signal.gates["stop_too_wide"] = {
             "action": "drop",
             "detail": f"stop distance {risk_atr_units:.1f} ATR > max {max_stop_atr:.1f} ATR",
@@ -151,10 +154,10 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
 
     # BUG 9: Snap TP1 and TP2 to structure as well (tight tolerance so they
     # don't get pulled too far from the original ATR multiples).
-    tp1 = _snap_to_structure(tp1, signal, direction, atr_val, snap_tol * 0.6, cfg=cfg)
-    tp2 = _snap_to_structure(tp2, signal, direction, atr_val, snap_tol * 0.7, cfg=cfg)
+    tp1 = _snap_to_structure(tp1, signal, direction, effective_atr, snap_tol * 0.6, cfg=cfg)
+    tp2 = _snap_to_structure(tp2, signal, direction, effective_atr, snap_tol * 0.7, cfg=cfg)
     # Snap TPs to nearby structure levels (TP3 with full tolerance)
-    tp3 = _snap_to_structure(tp3, signal, direction, atr_val, snap_tol, cfg=cfg)
+    tp3 = _snap_to_structure(tp3, signal, direction, effective_atr, snap_tol, cfg=cfg)
 
     # R:R (measured to TP2)
     rr = abs(tp2 - entry_mid) / risk if risk > 0 else 0
@@ -167,7 +170,7 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
 
     # Risk metrics
     risk_pct = 100.0 * risk / entry_mid if entry_mid > 0 else 0
-    risk_atr_units = risk / atr_val if atr_val > 0 else 0
+    risk_atr_units = risk / effective_atr if effective_atr > 0 else 0
 
     # Holding horizon and trade type classification
     horizon_map = {"15m": "hours", "1h": "1-2 days", "4h": "2-5 days", "1d": "1-2 weeks"}
@@ -206,12 +209,12 @@ def generate_plan(signal: SignalResult, cfg: Config) -> TradePlan | None:
     dec = _decimals(sl)
     if direction > 0:
         inv = f"HTF/MTF close below SL ({sl:,.{dec}f})"
-        entry_lo = max(entry_lo, sl + 0.05 * atr_val)
-        entry_hi = min(entry_hi, tp1 - 0.05 * atr_val)
+        entry_lo = max(entry_lo, sl + 0.05 * effective_atr)
+        entry_hi = min(entry_hi, tp1 - 0.05 * effective_atr)
     else:
         inv = f"HTF/MTF close above SL ({sl:,.{dec}f})"
-        entry_hi = min(entry_hi, sl - 0.05 * atr_val)
-        entry_lo = max(entry_lo, tp1 + 0.05 * atr_val)
+        entry_hi = min(entry_hi, sl - 0.05 * effective_atr)
+        entry_lo = max(entry_lo, tp1 + 0.05 * effective_atr)
 
     # Setup Quality Grade — factors in score, confidence, entry source, and killzone.
     # A market entry at 1.8 RR without a killzone is NOT the same as an OB entry
@@ -278,7 +281,8 @@ _TF_MINUTES = {
 def _get_ordered_tfs(signal: SignalResult, cfg: Config | None = None) -> list[str]:
     """Return timeframes in consistent LTF -> MTF -> HTF order."""
     if cfg is not None:
-        return [cfg.ltf] + [t for t in cfg.mtf if t not in (cfg.ltf, cfg.htf)] + [cfg.htf]
+        raw_list = [cfg.ltf] + [t for t in cfg.mtf if t not in (cfg.ltf, cfg.htf)] + [cfg.htf]
+        return sorted(raw_list, key=lambda t: _TF_MINUTES.get(t, 9999))
     return sorted(signal.tf_results.keys(), key=lambda t: _TF_MINUTES.get(t, 9999))
 
 

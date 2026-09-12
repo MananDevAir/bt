@@ -4,7 +4,7 @@ Usage:
     python run_bot.py               # start the scan loop (dry_run from config)
     python run_bot.py --live        # override dry_run to False (send real alerts)
     python run_bot.py --scan-once   # run one scan and exit
-    python run_bot.py --continuous  # run 24/7 continuous relay runner (5.5h session, 15m intervals)
+    python run_bot.py --continuous  # run 24/7 infinite loop (free hosts) or 5.5h relay (GitHub Actions)
     python run_bot.py --report      # generate and send daily report
     python run_bot.py --status      # print current scores (no Telegram)
 """
@@ -121,7 +121,10 @@ def cmd_status(cfg, conn):
 
 
 def _git_commit_push(db_path, conn=None):
-    """Commit and push database updates to GitHub repository with retry backoff and conflict resolution."""
+    """Commit and push database updates to GitHub repository.
+    Only runs when inside a GitHub Actions environment (GITHUB_ACTIONS=true).
+    Skipped gracefully on free Pterodactyl hosts (Kerit Cloud, Wispbyte, etc.).
+    """
     import subprocess
     import logging
     import time
@@ -134,6 +137,12 @@ def _git_commit_push(db_path, conn=None):
             flush_wal(conn)
         except Exception as exc:
             _log.debug("WAL flush before git commit: %s", exc)
+
+    # Only attempt git push inside GitHub Actions — skip on free Pterodactyl hosts
+    import os
+    if not os.environ.get("GITHUB_ACTIONS"):
+        _log.debug("Not running on GitHub Actions — skipping git push (DB stays local).")
+        return
 
     try:
         subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"], check=False)
@@ -207,18 +216,37 @@ def _trigger_next_relay():
     return False
 
 
-def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float = 5.5):
-    """Run 15-minute scans continuously for ~5.5 hours, then trigger the next runner."""
+def cmd_continuous_relay(cfg, conn, interval_minutes: int | None = None, max_hours: float = 5.5):
+    """Run scans continuously forever (or for max_hours on GitHub Actions).
+
+    On free 24/7 hosts (Kerit Cloud, Wispbyte): runs as a true infinite loop.
+    On GitHub Actions: respects max_hours then triggers next relay runner.
+    interval_minutes defaults to scan_interval_minutes from config.yaml (default 15).
+    """
     import logging
+    import os
     _log = logging.getLogger(__name__)
+
+    # Read interval from config if not explicitly passed
+    if interval_minutes is None:
+        interval_minutes = int(cfg.get("scan_interval_minutes", default=15) or 15)
+
+    on_github_actions = bool(os.environ.get("GITHUB_ACTIONS"))
     start_ts = time.time()
     max_duration_s = max_hours * 3600
     cycle = 0
 
-    _log.info("Starting 24/7 continuous relay runner (interval=%dm, max_run=%.1fh)",
-              interval_minutes, max_hours)
+    _log.info("Starting continuous runner (interval=%dm, mode=%s)",
+              interval_minutes, "GitHub Actions relay" if on_github_actions else "24/7 infinite")
 
-    while (time.time() - start_ts) < (max_duration_s - (interval_minutes * 60)):
+    # On GitHub Actions: stop before max_hours so there's time to trigger next relay
+    # On free hosts: run forever (while True)
+    def _should_continue() -> bool:
+        if on_github_actions:
+            return (time.time() - start_ts) < (max_duration_s - (interval_minutes * 60))
+        return True  # infinite loop on free hosts
+
+    while _should_continue():
         cycle += 1
         loop_start = time.time()
         _log.info("=== Starting Relay Cycle #%d (%s UTC) ===",
@@ -226,7 +254,7 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
 
         # 1. Process Telegram commands
         try:
-            from src.alerts.telegram import poll_commands
+            from src.alerts.dispatcher import poll_commands
             poll_commands(cfg, conn)
         except Exception as exc:
             _log.debug("Telegram polling error: %s", exc)
@@ -245,7 +273,7 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
 
         # 3. Process commands after scan
         try:
-            from src.alerts.telegram import poll_commands
+            from src.alerts.dispatcher import poll_commands
             poll_commands(cfg, conn)
         except Exception:
             pass
@@ -253,7 +281,7 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
         # 4. Daily summary at 9 PM IST
         if ist_now.hour == 21 and ist_now.minute < interval_minutes:
             try:
-                from src.alerts.telegram import send_text
+                from src.alerts.dispatcher import send_text
                 today_start_ms = int(datetime(ist_now.year, ist_now.month, ist_now.day, tzinfo=IST).timestamp() * 1000)
                 sig_count = conn.execute("SELECT COUNT(*) FROM signals WHERE ts > ?", (today_start_ms,)).fetchone()[0]
                 open_count = conn.execute("SELECT COUNT(*) FROM signals WHERE status = 'open'").fetchone()[0]
@@ -291,22 +319,25 @@ def cmd_continuous_relay(cfg, conn, interval_minutes: int = 15, max_hours: float
         # 7. Responsive wait until next 15-minute mark (polls Telegram every 5s)
         elapsed = time.time() - loop_start
         sleep_sec = max(5, (interval_minutes * 60) - elapsed)
-        _log.info("Cycle #%d completed in %.1fs. Listening for Telegram commands for %.0fs...",
+        _log.info("Cycle #%d completed in %.1fs. Waiting for %.0fs until next scan...",
                   cycle, elapsed, sleep_sec)
         sleep_until = time.time() + sleep_sec
         while time.time() < sleep_until:
             try:
-                from src.alerts.telegram import poll_commands
+                from src.alerts.dispatcher import poll_commands
                 poll_commands(cfg, conn)
             except Exception:
                 pass
             time.sleep(5)
 
-    # 8. Finished 5.5h session — trigger next relay runner
-    _log.info("Relay session limit reached (%.1f hours). Triggering next relay runner...",
-              (time.time() - start_ts) / 3600)
-    _trigger_next_relay()
-    _log.info("Relay runner handed off successfully. Exiting cleanly.")
+    # 8. Session limit reached — only triggers on GitHub Actions
+    if on_github_actions:
+        _log.info("Relay session limit reached (%.1f hours). Triggering next relay runner...",
+                  (time.time() - start_ts) / 3600)
+        _trigger_next_relay()
+        _log.info("Relay runner handed off successfully. Exiting cleanly.")
+    else:
+        _log.info("Continuous runner exiting (this should not happen on a 24/7 host).")
 
 
 def main():
@@ -347,7 +378,7 @@ def main():
         elif args.github_actions:
             # Process any pending Telegram interactive commands
             try:
-                from src.alerts.telegram import poll_commands
+                from src.alerts.dispatcher import poll_commands
                 poll_commands(cfg, conn)
             except Exception as exc:
                 import logging
@@ -367,7 +398,7 @@ def main():
 
             # Check if any new commands arrived during the scan
             try:
-                from src.alerts.telegram import poll_commands
+                from src.alerts.dispatcher import poll_commands
                 poll_commands(cfg, conn)
             except Exception:
                 pass
@@ -376,7 +407,7 @@ def main():
             if ist_now.hour == 21 and ist_now.minute < 15:
                 try:
                     from src.store import signals as sig_store
-                    from src.alerts.telegram import send_text
+                    from src.alerts.dispatcher import send_text
                     today_start_ms = int(datetime(ist_now.year, ist_now.month, ist_now.day,
                                                   tzinfo=IST).timestamp() * 1000)
                     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)

@@ -208,17 +208,20 @@ def has_overlapping_signal(conn: sqlite3.Connection, symbol: str,
         return False
     dir_str = "long" if direction > 0 else "short"
 
-    # Time-based gap: no two signals for same symbol+direction within 2 hours
+    # Time-based gap: no two open/won signals for same symbol+direction within 2 hours
+    # If the previous signal was stopped out ('lost'), we bypass this to allow SMC liquidity sweep re-entries.
     import time
     two_hours_ago_ms = int((time.time() - 2 * 3600) * 1000)
     recent = conn.execute(
-        "SELECT id FROM signals "
-        "WHERE symbol = ? AND direction = ? AND ts > ?",
+        "SELECT id, status FROM signals "
+        "WHERE symbol = ? AND direction = ? AND ts > ? "
+        "AND status IN ('open', 'won') "
+        "ORDER BY ts DESC LIMIT 1",
         (symbol, dir_str, two_hours_ago_ms)
     ).fetchone()
     if recent:
-        log.debug("Time gap: %s %s signal #%d emitted within last 2h",
-                  symbol, dir_str, recent["id"])
+        log.debug("Time gap: %s %s signal #%d (status=%s) emitted within last 2h",
+                  symbol, dir_str, recent["id"], recent["status"])
         return True
 
     # Price-zone overlap check with 2 ATR tolerance band

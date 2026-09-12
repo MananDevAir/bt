@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS signals (
     sent_ok     INTEGER NOT NULL DEFAULT 0,
     data_source TEXT,                     -- which source provided the candles
     status      TEXT NOT NULL DEFAULT 'open', -- open | won | lost | expired | invalidated
-    tg_msg_id   INTEGER                   -- Telegram message_id for reply threading
+    tg_msg_id   INTEGER                   -- Message ID for reply threading (Telegram msg_id or Discord thread_id)
 );
 CREATE INDEX IF NOT EXISTS idx_signals_symbol_ts ON signals(symbol, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status);
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS bot_state (
 def connect(db_path: Path | str) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30)
+    conn = sqlite3.connect(path, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -108,6 +108,22 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
         if "tg_msg_id" not in cols:
             conn.execute("ALTER TABLE signals ADD COLUMN tg_msg_id INTEGER")
             conn.commit()
+    except Exception:
+        pass
+
+    # Fix 4 + Fix 1: Auto-migrate outcomes table for crash-safe notifications
+    # and per-signal candle replay progress tracking
+    try:
+        ocols = [r["name"] for r in conn.execute("PRAGMA table_info(outcomes)").fetchall()]
+        if "discord_notified" not in ocols:
+            conn.execute(
+                "ALTER TABLE outcomes ADD COLUMN discord_notified INTEGER NOT NULL DEFAULT 0"
+            )
+        if "last_outcome_checked_ts" not in ocols:
+            conn.execute(
+                "ALTER TABLE outcomes ADD COLUMN last_outcome_checked_ts INTEGER"
+            )
+        conn.commit()
     except Exception:
         pass
 
