@@ -14,7 +14,7 @@ fi
 
 # 2. Pull latest code from GitHub
 echo "📥 Pulling latest code..."
-git pull origin main
+git pull origin $(git branch --show-current)
 
 # 3. Update dependencies if required
 echo "📚 Updating Python dependencies..."
